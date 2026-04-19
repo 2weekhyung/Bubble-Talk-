@@ -1,4 +1,4 @@
-package org.example.bubbletalk.domain.chat.domain;
+package com.bubbletalk.entity;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -13,16 +13,16 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 public class ChatMessage {
 
-    private String senderIp;   // 익명 식별자 (IP 등)
+    private String senderIp;
     private String content;
-    private int ttl;           // 생명주기 (초)
+    private int ttl;
     private LocalDateTime timestamp;
 
     public static ChatMessage create(String senderIp, String content) {
         return ChatMessage.builder()
                 .senderIp(senderIp)
                 .content(content)
-                .ttl(5) // 기본 5초
+                .ttl(5)
                 .timestamp(LocalDateTime.now())
                 .build();
     }

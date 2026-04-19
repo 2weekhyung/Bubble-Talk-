@@ -1,10 +1,10 @@
 plugins {
     id 'java'
-    id 'org.springframework.boot' version '3.2.4'
-    id 'io.spring.dependency-management' version '1.1.4'
+    id 'org.springframework.boot' version '3.3.0' // 버전을 3.3.0으로 상향
+    id 'io.spring.dependency-management' version '1.1.5'
 }
 
-group = 'org.example.bubbletalk'
+group = 'com.bubbletalk'
 version = '0.0.1-SNAPSHOT'
 
 java {
@@ -27,10 +27,14 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-validation'
     implementation 'org.springframework.boot:spring-boot-starter-web'
     implementation 'org.springframework.boot:spring-boot-starter-websocket'
-    compileOnly 'org.projectlombok:lombok'
+    
+    // Lombok 버전을 1.18.32로 명시하여 최신 JDK 호환성 확보
+    compileOnly 'org.projectlombok:lombok:1.18.32'
+    annotationProcessor 'org.projectlombok:lombok:1.18.32'
+    
     runtimeOnly 'com.mysql:mysql-connector-j'
-    annotationProcessor 'org.projectlombok:lombok'
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
 test {

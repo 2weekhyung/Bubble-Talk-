@@ -1,4 +1,4 @@
-package org.example.bubbletalk.domain.event.domain;
+package com.bubbletalk.entity;
 
 import jakarta.persistence.*;
 import lombok.AccessLevel;
@@ -12,27 +12,23 @@ import java.time.LocalDateTime;
 
 @Entity
 @Getter
-@Table(name = "daily_menus")
+@Table(name = "forbidden_words")
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @EntityListeners(AuditingEntityListener.class)
-public class DailyMenu {
+public class ForbiddenWord {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false)
-    private String menuName;
-
-    @Column(nullable = false)
-    private Long finalScore;
+    @Column(nullable = false, unique = true)
+    private String word;
 
     @CreatedDate
-    private LocalDateTime selectedAt;
+    private LocalDateTime createdAt;
 
     @Builder
-    public DailyMenu(String menuName, Long finalScore) {
-        this.menuName = menuName;
-        this.finalScore = finalScore;
+    public ForbiddenWord(String word) {
+        this.word = word;
     }
 }
