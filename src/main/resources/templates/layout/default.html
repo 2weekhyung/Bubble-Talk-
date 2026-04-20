@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org" xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Wax-Zil | 왁자지껄 실시간 점심 전쟁</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+  <link rel="stylesheet" href="/css/main.css">
+  <th:block layout:fragment="css"></th:block>
+</head>
+<body class="h-screen flex flex-col">
+
+<!-- 상단 헤더 -->
+<div th:replace="~{fragments/header :: header}"></div>
+
+<!-- 메인 콘텐츠 영역 -->
+<th:block layout:fragment="content"></th:block>
+
+<!-- 푸터 -->
+<div th:replace="~{fragments/footer :: footer}"></div>
+
+<!-- 라이브러리 추가 -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/sockjs-client/1.6.1/sockjs.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+
+<script src="/js/common/common-ajax.js"></script>
+<script src="/js/main/main.js"></script>
+<th:block layout:fragment="script"></th:block>
+</body>
+</html>
+

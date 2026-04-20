@@ -35,4 +35,16 @@ public class DailyMenu {
         this.menuName = menuName;
         this.finalScore = finalScore;
     }
+
+    /**
+     * [개념] 도메인 메서드
+     * 엔티티 스스로 데이터를 안전하게 관리하도록 합니다. 
+     * 외부에서 setter로 막 바꾸는 것보다 안전합니다.
+     */
+    public void addScore() {
+        if (this.finalScore == null) {
+            this.finalScore = 0L;
+        }
+        this.finalScore++;
+    }
 }

@@ -1,0 +1,57 @@
+@import url('https://fonts.googleapis.com/css2?family=Pretendard:wght@400;700;900&display=swap');
+
+body {
+    font-family: 'Pretendard', sans-serif;
+    background-color: #0f172a;
+    color: #f8fafc;
+    overflow: hidden;
+}
+
+/* 대나무숲 팝업 메시지 애니메이션 */
+.bullet-msg {
+    position: absolute;
+    white-space: nowrap;
+    will-change: transform, opacity;
+    pointer-events: none;
+    background: rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(12px);
+    padding: 12px 20px;
+    border-radius: 18px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    font-weight: 600;
+    z-index: 10;
+    font-size: 0.95rem;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    transform: scale(0);
+    opacity: 0;
+}
+
+@keyframes popAndStay {
+    0% { transform: scale(0.5); opacity: 0; }
+    10% { transform: scale(1.1); opacity: 1; }
+    15% { transform: scale(1); opacity: 1; }
+    85% { transform: scale(1); opacity: 1; }
+    100% { transform: scale(0.8); opacity: 0; }
+}
+
+.battle-card {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.progress-bar {
+    transition: width 0.8s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+/* 시상대 높이 애니메이션 */
+.podium-bar {
+    transition: height 1s ease-out;
+}
+
+.podium-1 { background: linear-gradient(to top, #eab308, #fef08a); }
+.podium-2 { background: linear-gradient(to top, #94a3b8, #f1f5f9); }
+.podium-3 { background: linear-gradient(to top, #92400e, #fbbf24); }
+
+/* 커스텀 스크롤바 */
+.custom-scroll::-webkit-scrollbar { width: 6px; }
+.custom-scroll::-webkit-scrollbar-track { background: transparent; }
+.custom-scroll::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }

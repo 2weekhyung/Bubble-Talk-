@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<header th:fragment="header" class="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-900/80 backdrop-blur-md z-50 shadow-lg">
+  <div class="flex items-center gap-2">
+    <div class="w-8 h-8 bg-green-500 rounded-lg flex items-center justify-center font-black text-slate-900 shadow-[0_0_15px_rgba(34,197,94,0.4)]">W</div>
+    <h1 class="text-xl font-black tracking-tighter italic">WAX-ZIL</h1>
+  </div>
+  <div class="flex items-center gap-3">
+    <div id="live-timer" class="text-sm font-mono bg-slate-800 px-3 py-1 rounded-full text-slate-400 border border-slate-700">00:00:00</div>
+    <div class="flex items-center gap-1.5 bg-red-500/10 px-2 py-1 rounded-md border border-red-500/20">
+      <span class="w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
+      <span class="text-[10px] font-bold text-red-500">LIVE 1.2K</span>
+    </div>
+  </div>
+</header>
+</html>
