@@ -1,7 +1,7 @@
-package com.bubbletalk.service;
+package com.bubbletalk.menu.service;
 
-import com.bubbletalk.entity.DailyMenu;
-import com.bubbletalk.repository.MenuRepository;
+import com.bubbletalk.menu.entity.DailyMenu;
+import com.bubbletalk.menu.repository.MenuRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;

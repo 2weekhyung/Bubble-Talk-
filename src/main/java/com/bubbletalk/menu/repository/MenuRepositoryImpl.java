@@ -1,7 +1,7 @@
-package com.bubbletalk.repository;
+package com.bubbletalk.menu.repository;
 
-import com.bubbletalk.entity.DailyMenu;
-import com.bubbletalk.entity.QDailyMenu;
+import com.bubbletalk.menu.entity.DailyMenu;
+import com.bubbletalk.menu.entity.QDailyMenu;
 import com.querydsl.jpa.impl.JPAQueryFactory;
 import lombok.RequiredArgsConstructor;
 import java.util.List;

@@ -1,6 +1,6 @@
-package com.bubbletalk.repository;
+package com.bubbletalk.menu.repository;
 
-import com.bubbletalk.entity.DailyMenu;
+import com.bubbletalk.menu.entity.DailyMenu;
 import java.util.List;
 
 public interface MenuRepositoryCustom {

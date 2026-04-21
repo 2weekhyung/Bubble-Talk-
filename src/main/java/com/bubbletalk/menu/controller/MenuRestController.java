@@ -1,7 +1,7 @@
-package com.bubbletalk.controller.api;
+package com.bubbletalk.menu.controller;
 
 import com.bubbletalk.base.dto.BaseDto;
-import com.bubbletalk.service.MenuService;
+import com.bubbletalk.menu.service.MenuService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 

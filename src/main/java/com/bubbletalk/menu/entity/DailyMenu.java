@@ -1,4 +1,4 @@
-package com.bubbletalk.entity;
+package com.bubbletalk.menu.entity;
 
 import jakarta.persistence.*;
 import lombok.AccessLevel;

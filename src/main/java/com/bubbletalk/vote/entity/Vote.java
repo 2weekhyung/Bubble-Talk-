@@ -1,4 +1,4 @@
-package com.bubbletalk.entity;
+package com.bubbletalk.vote.entity;
 
 import jakarta.persistence.*;
 import lombok.AccessLevel;
@@ -12,23 +12,28 @@ import java.time.LocalDateTime;
 
 @Entity
 @Getter
-@Table(name = "forbidden_words")
+@Table(name = "votes")
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @EntityListeners(AuditingEntityListener.class)
-public class ForbiddenWord {
+public class Vote {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false, unique = true)
-    private String word;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "menu_id")
+    private DailyMenu dailyMenu;
+
+    @Column(nullable = false)
+    private String voterIp; // ?�명 ?�표 구분???�한 IP (간단 ?�시)
 
     @CreatedDate
-    private LocalDateTime createdAt;
+    private LocalDateTime votedAt;
 
     @Builder
-    public ForbiddenWord(String word) {
-        this.word = word;
+    public Vote(DailyMenu dailyMenu, String voterIp) {
+        this.dailyMenu = dailyMenu;
+        this.voterIp = voterIp;
     }
 }

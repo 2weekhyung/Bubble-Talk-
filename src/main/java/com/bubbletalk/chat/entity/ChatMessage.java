@@ -1,4 +1,4 @@
-package com.bubbletalk.entity;
+package com.bubbletalk.chat.entity;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
