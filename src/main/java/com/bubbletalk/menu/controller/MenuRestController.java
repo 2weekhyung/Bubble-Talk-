@@ -1,14 +1,18 @@
 package com.bubbletalk.menu.controller;
 
-import com.bubbletalk.base.dto.BaseDto;
+import com.bubbletalk.base.dto.BaseResDto;
+import com.bubbletalk.menu.dto.req.MenuAddReqDto;
+import com.bubbletalk.menu.dto.req.MenuVoteReqDto;
+import com.bubbletalk.menu.dto.res.DailyMenuResDto;
 import com.bubbletalk.menu.service.MenuService;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 /**
- * [REST API 컨트롤러]
- * 클라이언트로부터 요청(메뉴 추가, 투표 등)을 받아 처리하고
- * 결과를 반환합니다. 데이터 저장 후 실시간 전송을 위해 소켓 컨트롤러를 호출합니다.
+ * [메뉴 및 투표 관련 REST API 컨트롤러]
+ * 화면(js)에서 보내는 HTTP 요청을 받아 비즈니스 로직(Service)을 실행하고 결과를 돌려줍니다.
  */
 @RestController
 @RequestMapping("/api/menu")
@@ -19,49 +23,47 @@ public class MenuRestController {
     private final MenuSocketController socketController;
 
     /**
-     * [개념] 메뉴 추가 (REST 요청)
-     * 누군가 브라우저에서 메뉴 이름을 입력하면 이 메서드가 호출되어 DB에 저장됩니다.
-     */
-    @PostMapping("/add")
-    public BaseDto addMenu(@RequestParam String menuName) {
-        try {
-            // DB에 메뉴를 저장합니다.
-            Long id = menuService.saveMenu(menuName);
-
-            // [핵심] 데이터가 바뀌었으므로 모든 클라이언트에게 알려줍니다!
-            socketController.broadcastMenuUpdate();
-
-            return new BaseDto("0000", "정상 저장되었습니다.");
-        } catch (Exception e) {
-            return new BaseDto("9999", "실패: " + e.getMessage());
-        }
-    }
-
-    /**
-     * [개념] 투표 (REST 요청)
-     * 특정 메뉴를 클릭하면 해당 메뉴의 점수를 1 올립니다.
-     */
-    @PostMapping("/vote")
-    public BaseDto vote(@RequestParam Long menuId) {
-        try {
-            // 득표수를 올리는 비즈니스 로직(서비스에서 구현 필요)
-            menuService.increaseVote(menuId);
-
-            // [핵심] 투표로 데이터가 바뀌었으므로 즉시 방송합니다!
-            socketController.broadcastMenuUpdate();
-
-            return new BaseDto("0000", "투표가 완료되었습니다.");
-        } catch (Exception e) {
-            return new BaseDto("9999", "실패: " + e.getMessage());
-        }
-    }
-
-    /**
-     * [개념] 초기 랭킹 조회 (REST 요청)
-     * 페이지가 처음 열릴 때 현재 상태를 한 번 가져옵니다.
+     * [GET] /api/menu/rankings
+     * 현재 투표 순위 리스트를 가져옵니다. 
+     * 페이지가 처음 열릴 때 호출되어 초기 화면을 그려줍니다.
      */
     @GetMapping("/rankings")
-    public BaseDto getRankings() {
-        return new BaseDto(menuService.getTopRankings());
+    public ResponseEntity<BaseResDto> getRankings() {
+        // Service를 통해 DB/Redis에 저장된 현재 순위를 가져옴
+        DailyMenuResDto rankings = menuService.getTopRankings();
+        return ResponseEntity.ok(BaseResDto.ok(rankings));
+    }
+
+    /**
+     * [POST] /api/menu/add
+     * 새로운 점심 메뉴를 전장에 투입합니다.
+     */
+    @PostMapping("/add")
+    public ResponseEntity<BaseResDto> addMenu(@RequestBody MenuAddReqDto reqDto) {
+        // 1. 새로운 메뉴를 DB에 저장
+        Long id = menuService.saveMenu(reqDto.getMenuName());
+        
+        // 2. [실시간 전파] 새로운 메뉴가 생겼음을 모든 접속자에게 소켓으로 알림
+        socketController.broadcastMenuUpdate();
+        
+        return ResponseEntity.ok(BaseResDto.ok(id));
+    }
+
+    /**
+     * [POST] /api/menu/vote
+     * 특정 메뉴에 투표(화력 지원)를 합니다.
+     */
+    @PostMapping("/vote")
+    public ResponseEntity<BaseResDto> vote(@RequestBody MenuVoteReqDto reqDto, HttpServletRequest request) {
+        // 사용자의 IP 주소를 가져와 중복 투표를 방지하는 용도로 사용합니다.
+        String ip = request.getRemoteAddr();
+        
+        // 1. 투표 점수 올리기 및 투표 이력 저장
+        menuService.increaseVote(reqDto.getMenuId(), ip);
+        
+        // 2. [실시간 전파] 점수가 변했음을 모든 접속자에게 실시간으로 알림 (화면의 게이지가 즉시 상승)
+        socketController.broadcastMenuUpdate();
+        
+        return ResponseEntity.ok(BaseResDto.ok());
     }
 }

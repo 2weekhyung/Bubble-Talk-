@@ -1,21 +1,13 @@
 package com.bubbletalk.base.dto;
 
 import lombok.Data;
-import lombok.NoArgsConstructor;
+
+import java.time.LocalDateTime;
 
 @Data
-@NoArgsConstructor
-public class BaseDto {
-    private String code = "0000";
-    private String message = "정상";
-    private Object result;
 
-    public BaseDto(String code, String message) {
-        this.code = code;
-        this.message = message;
-    }
-    
-    public BaseDto(Object result) {
-        this.result = result;
-    }
+public class BaseDto {
+    private LocalDateTime createTime;
+
+
 }
