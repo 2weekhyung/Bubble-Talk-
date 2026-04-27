@@ -27,7 +27,20 @@ public class MenuSocketController {
         DailyMenuResDto topMenus = menuService.getTopRankings();
         
         // 2. "/topic/menus" 채널로 데이터를 쏩니다.
-        // 클라이언트(main.js)는 이 경로를 구독(subscribe)하고 있다가 데이터를 받으면 화면을 갱신합니다.
         messagingTemplate.convertAndSend("/topic/menus", topMenus);
+    }
+
+    /**
+     * [시스템 메시지 브로드캐스팅]
+     * 새 메뉴 등록 알림 등을 채팅창(버블)에 띄워 모든 사용자에게 알립니다.
+     */
+    public void broadcastSystemMessage(String content) {
+        // 채팅 메시지 규격에 맞춰 전송 (간단하게 맵이나 익명 클래스로 전송 가능)
+        // ChatMessage 엔티티나 DTO 구조에 맞춥니다.
+        messagingTemplate.convertAndSend("/topic/bubbles", java.util.Map.of(
+            "content", content,
+            "sender", "SYSTEM",
+            "isSystem", true
+        ));
     }
 }

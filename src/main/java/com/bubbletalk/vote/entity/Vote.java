@@ -19,7 +19,7 @@ public class Vote extends BaseEntity {
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "daily_menu_id")
+    @JoinColumn(name = "menu_id")
     private DailyMenu dailyMenu;
 
     private String voterIp;

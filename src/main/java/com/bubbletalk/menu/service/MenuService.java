@@ -44,20 +44,32 @@ public class MenuService {
     private static final String VOTER_KEY_PREFIX = "lunch:voters:";
 
     /**
-     * 새로운 메뉴를 생성합니다.
+     * 새로운 메뉴를 생성하거나, 이미 있으면 자동으로 투표합니다.
      */
     @Transactional
-    public Long saveMenu(String menuName) {
-        DailyMenu menu = DailyMenu.builder()
-                .menuName(menuName)
-                .finalScore(0L)
-                .build();
-        return menuRepository.save(menu).getId();
+    public void saveAndVote(String menuName, String voterIp) {
+        DailyMenu menu = menuRepository.findByMenuName(menuName).orElse(null);
+
+        if (menu == null) {
+            // [신규 등록]
+            menu = DailyMenu.builder()
+                    .menuName(menuName)
+                    .finalScore(0L)
+                    .build();
+            menu = menuRepository.save(menu);
+            
+            // Redis ZSET 초기화 (0점)
+            String today = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
+            redisTemplate.opsForZSet().add(RANKING_KEY_PREFIX + today, menu.getId().toString(), 0);
+            log.info("새로운 메뉴 등록: {}", menuName);
+        }
+
+        // [공통] 투표 진행 (중복 투표 체크는 increaseVote 내부에서 수행)
+        increaseVote(menu.getId(), voterIp);
     }
 
     /**
      * [투표 로직] 특정 메뉴에 표를 던집니다.
-     * Redis의 ZSET(순서가 있는 세트) 기능을 사용하여 실시간 순위를 관리합니다.
      */
     @Transactional
     public void increaseVote(Long menuId, String voterIp) {
@@ -65,20 +77,17 @@ public class MenuService {
         String rankingKey = RANKING_KEY_PREFIX + today;
         String voterKey = VOTER_KEY_PREFIX + today + ":" + menuId;
 
-        // 1. [중복 방지] Redis Set을 사용하여 이 IP가 이 메뉴에 이미 투표했는지 체크
+        // 1. [중복 방지]
         Boolean alreadyVoted = redisTemplate.opsForSet().isMember(voterKey, voterIp);
         if (Boolean.TRUE.equals(alreadyVoted)) {
-            log.info("이미 투표한 사용자입니다. IP={}, MenuID={}", voterIp, menuId);
-            return;
+            throw new IllegalStateException("이미 이 메뉴에 화력을 지원하셨습니다!");
         }
 
-        // 2. [Redis ZSET] 해당 메뉴의 점수를 1 올림 (실시간 랭킹 시스템의 핵심)
+        // 2. [Redis ZSET] 점수 상승
         redisTemplate.opsForZSet().incrementScore(rankingKey, menuId.toString(), 1);
-
-        // 3. 중복 방지용 셋에 IP 추가
         redisTemplate.opsForSet().add(voterKey, voterIp);
 
-        // 4. [DB 영속화] 투표 이력을 DB에도 남기고, 엔티티의 점수를 업데이트
+        // 3. [DB 영속화]
         DailyMenu menu = menuRepository.findById(menuId)
                 .orElseThrow(() -> new IllegalArgumentException("해당 메뉴가 존재하지 않습니다. ID=" + menuId));
         
@@ -87,47 +96,46 @@ public class MenuService {
                 .voterIp(voterIp)
                 .build());
         
-        menu.addScore(); // DB의 finalScore 필드 증가
+        menu.addScore();
     }
 
     /**
-     * [실시간 순위 조회] 
-     * Redis ZSET에서 점수가 높은 순으로 상위 메뉴 리스트를 가져옵니다.
+     * [실시간 순위 조회]
      */
     public DailyMenuResDto getTopRankings() {
-        String today = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
-        String rankingKey = RANKING_KEY_PREFIX + today;
+        try {
+            String today = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
+            String rankingKey = RANKING_KEY_PREFIX + today;
 
-        // Redis에서 점수가 높은 순으로 10개(0~9) 가져오기
-        Set<Object> topIds = redisTemplate.opsForZSet().reverseRange(rankingKey, 0, 9);
-        
-        if (topIds == null || topIds.isEmpty()) {
-            return DailyMenuResDto.builder()
-                    .menuList(Collections.emptyList())
-                    .build();
+            Set<Object> topIds = redisTemplate.opsForZSet().reverseRange(rankingKey, 0, 9);
+            
+            if (topIds == null || topIds.isEmpty()) {
+                return DailyMenuResDto.builder().menuList(Collections.emptyList()).build();
+            }
+
+            List<Long> ids = topIds.stream()
+                    .map(id -> Long.valueOf(String.valueOf(id).replace("\"", "")))
+                    .collect(Collectors.toList());
+
+            List<DailyMenu> menus = menuRepository.findAllById(ids);
+            
+            List<MenuListResDto> rankings = menus.stream()
+                    .map(menu -> {
+                        MenuListResDto dto = new MenuListResDto();
+                        dto.setId(menu.getId());
+                        dto.setMenuName(menu.getMenuName());
+                        Double score = redisTemplate.opsForZSet().score(rankingKey, menu.getId().toString());
+                        dto.setFinalScore(score != null ? score.longValue() : 0L);
+                        return dto;
+                    })
+                    .sorted((m1, m2) -> Long.compare(m2.getFinalScore(), m1.getFinalScore()))
+                    .collect(Collectors.toList());
+
+            return DailyMenuResDto.builder().menuList(rankings).build();
+        } catch (Exception e) {
+            log.error("랭킹 조회 중 오류 발생", e);
+            return DailyMenuResDto.builder().menuList(Collections.emptyList()).build();
         }
-
-        // 가져온 ID들로 DB에서 메뉴 정보를 조회
-        List<Long> ids = topIds.stream()
-                .map(id -> Long.valueOf(id.toString()))
-                .collect(Collectors.toList());
-
-        List<MenuListResDto> rankings = menuRepository.findAllById(ids).stream()
-                .map(menu -> {
-                    MenuListResDto dto = new MenuListResDto();
-                    dto.setId(menu.getId());
-                    dto.setMenuName(menu.getMenuName());
-                    
-                    Double score = redisTemplate.opsForZSet().score(rankingKey, menu.getId().toString());
-                    dto.setFinalScore(score != null ? score.longValue() : 0L);
-                    return dto;
-                })
-                .sorted((m1, m2) -> Long.compare(m2.getFinalScore(), m1.getFinalScore()))
-                .collect(Collectors.toList());
-
-        return DailyMenuResDto.builder()
-                .menuList(rankings)
-                .build();
     }
 
     /**

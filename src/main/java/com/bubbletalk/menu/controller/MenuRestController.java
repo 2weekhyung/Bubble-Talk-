@@ -36,17 +36,26 @@ public class MenuRestController {
 
     /**
      * [POST] /api/menu/add
-     * 새로운 점심 메뉴를 전장에 투입합니다.
+     * 새로운 점심 메뉴를 전장에 투입하거나, 중복 시 자동 투표합니다.
      */
     @PostMapping("/add")
-    public ResponseEntity<BaseResDto> addMenu(@RequestBody MenuAddReqDto reqDto) {
-        // 1. 새로운 메뉴를 DB에 저장
-        Long id = menuService.saveMenu(reqDto.getMenuName());
-        
-        // 2. [실시간 전파] 새로운 메뉴가 생겼음을 모든 접속자에게 소켓으로 알림
-        socketController.broadcastMenuUpdate();
-        
-        return ResponseEntity.ok(BaseResDto.ok(id));
+    public ResponseEntity<BaseResDto> addMenu(@RequestBody MenuAddReqDto reqDto, HttpServletRequest request) {
+        String ip = request.getRemoteAddr();
+        try {
+            // 1. 메뉴 저장 및 투표 통합 처리
+            menuService.saveAndVote(reqDto.getMenuName(), ip);
+            
+            // 2. 실시간 전파
+            socketController.broadcastMenuUpdate();
+            socketController.broadcastSystemMessage("🚀 [" + reqDto.getMenuName() + "] 화력 지원 개시!");
+            
+            return ResponseEntity.ok(BaseResDto.ok());
+        } catch (IllegalStateException e) {
+            // 이미 투표한 경우 등
+            return ResponseEntity.badRequest().body(new BaseResDto("4002", e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(new BaseResDto("5000", "처리 중 오류가 발생했습니다."));
+        }
     }
 
     /**
@@ -55,15 +64,15 @@ public class MenuRestController {
      */
     @PostMapping("/vote")
     public ResponseEntity<BaseResDto> vote(@RequestBody MenuVoteReqDto reqDto, HttpServletRequest request) {
-        // 사용자의 IP 주소를 가져와 중복 투표를 방지하는 용도로 사용합니다.
         String ip = request.getRemoteAddr();
-        
-        // 1. 투표 점수 올리기 및 투표 이력 저장
-        menuService.increaseVote(reqDto.getMenuId(), ip);
-        
-        // 2. [실시간 전파] 점수가 변했음을 모든 접속자에게 실시간으로 알림 (화면의 게이지가 즉시 상승)
-        socketController.broadcastMenuUpdate();
-        
-        return ResponseEntity.ok(BaseResDto.ok());
+        try {
+            menuService.increaseVote(reqDto.getMenuId(), ip);
+            socketController.broadcastMenuUpdate();
+            return ResponseEntity.ok(BaseResDto.ok());
+        } catch (IllegalStateException e) {
+            return ResponseEntity.badRequest().body(new BaseResDto("4002", e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(new BaseResDto("5000", "이미 이 메뉴에 화력을 지원하셨습니다!"));
+        }
     }
 }

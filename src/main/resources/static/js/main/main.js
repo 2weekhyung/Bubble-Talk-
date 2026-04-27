@@ -32,7 +32,7 @@ const MAINJS = {
             // [구독] 실시간 메뉴 랭킹 업데이트
             this.stompClient.subscribe('/topic/menus', (response) => {
                 const updatedMenus = JSON.parse(response.body);
-                this.battleItems = updatedMenus;
+                this.battleItems = updatedMenus.menuList;
                 if (this.state === 'VOTING') this.renderVoting();
                 if (this.state === 'FINISHED') this.renderResults();
             });
@@ -40,7 +40,8 @@ const MAINJS = {
             // [구독] 실시간 채팅 메시지 수신
             this.stompClient.subscribe('/topic/bubbles', (response) => {
                 const chatMsg = JSON.parse(response.body);
-                this.createBullet(chatMsg.content);
+                // 서버에서 보낸 시스템 메시지(메뉴 추가 등)인 경우 특수 효과(true) 적용
+                this.createBullet(chatMsg.content, chatMsg.isSystem || false);
             });
 
         }, (error) => {
@@ -56,7 +57,7 @@ const MAINJS = {
         try {
             const response = await COMMON_AJAX.get('/api/menu/rankings');
             if (response.code === "0000") {
-                this.battleItems = response.result;
+                this.battleItems = response.result.menuList;
                 this.changeState(this.state);
             }
         } catch (error) {
@@ -73,15 +74,15 @@ const MAINJS = {
         if (!name) return;
 
         try {
-            const response = await COMMON_AJAX.post(`/api/menu/add?menuName=${encodeURIComponent(name)}`);
+            const response = await COMMON_AJAX.post('/api/menu/add', { menuName: name });
             if (response.code === "0000") {
                 input.value = '';
-                this.createBullet(`🚀 [${name}] 전장 투입 성공!`, true);
-            } else {
-                alert(response.message);
             }
         } catch (error) {
-            console.error("메뉴 추가 에러:", error);
+            console.error("메뉴 추가/투표 에러:", error);
+            // 에러 메시지(중복 투표 등)를 버블로 표시
+            this.createBullet(`❌ ${error.message}`, false);
+            input.value = '';
         }
     },
 
@@ -89,13 +90,15 @@ const MAINJS = {
      * 투표하기 (REST)
      */
     vote: async function(menuId, menuName) {
+        if (!menuId) return;
         try {
-            const response = await COMMON_AJAX.post(`/api/menu/vote?menuId=${menuId}`);
+            const response = await COMMON_AJAX.post('/api/menu/vote', { menuId: Number(menuId) });
             if (response.code === "0000") {
                 this.createBullet(`${menuName} +1 화력 지원!`, true);
             }
         } catch (error) {
             console.error("투표 에러:", error);
+            this.createBullet(`❌ ${error.message}`, false);
         }
     },
 
