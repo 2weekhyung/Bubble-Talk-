@@ -21,6 +21,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class ForbiddenWordRestController {
 
+    private final ForbiddenWordService forbiddenWordService;
     private final ForbiddenWordRepository forbiddenWordRepository;
 
     /**
@@ -28,6 +29,8 @@ public class ForbiddenWordRestController {
      */
     @GetMapping
     public ResponseEntity<BaseResDto> getAllWords() {
+        // 조회의 경우 단순 리스트 반환이므로 Repository를 직접 사용할 수도 있지만,
+        // 일관성을 위해 Service에서 처리하거나 Repository 결과를 DTO로 변환합니다.
         List<ForbiddenWordResDto> words = forbiddenWordRepository.findAll().stream()
                 .map(fw -> ForbiddenWordResDto.builder()
                         .id(fw.getId())
@@ -42,23 +45,8 @@ public class ForbiddenWordRestController {
      */
     @PostMapping
     public ResponseEntity<BaseResDto> addWord(@RequestBody ForbiddenWordAddReqDto reqDto) {
-        String word = reqDto.getWord();
-        // 이미 등록된 단어인지 확인 후 저장
-        if (forbiddenWordRepository.existsByWord(word)) {
-            throw new IllegalArgumentException("이미 등록된 금칙어입니다: " + word);
-        }
-
-        ForbiddenWord forbiddenWord = ForbiddenWord.builder()
-                .word(word)
-                .build();
-        
-        ForbiddenWord saved = forbiddenWordRepository.save(forbiddenWord);
-        ForbiddenWordResDto resDto = ForbiddenWordResDto.builder()
-                .id(saved.getId())
-                .word(saved.getWord())
-                .build();
-        
-        return ResponseEntity.ok(BaseResDto.ok(resDto));
+        forbiddenWordService.addWord(reqDto.getWord());
+        return ResponseEntity.ok(BaseResDto.ok());
     }
 
     /**
@@ -67,7 +55,7 @@ public class ForbiddenWordRestController {
      */
     @DeleteMapping("/{id}")
     public ResponseEntity<BaseResDto> deleteWord(@PathVariable Long id) {
-        forbiddenWordRepository.deleteById(id);
+        forbiddenWordService.deleteWord(id);
         return ResponseEntity.ok(BaseResDto.ok());
     }
 }

@@ -1,14 +1,13 @@
 package com.bubbletalk.menu.service;
 
 import com.bubbletalk.base.dto.BaseResDto;
+import com.bubbletalk.global.constant.RedisKey;
 import com.bubbletalk.menu.dto.res.DailyMenuResDto;
 import com.bubbletalk.menu.dto.res.MenuListResDto;
 import com.bubbletalk.menu.entity.DailyMenu;
 import com.bubbletalk.menu.entity.LunchHistory;
 import com.bubbletalk.menu.repository.LunchHistoryRepository;
 import com.bubbletalk.menu.repository.MenuRepository;
-import com.bubbletalk.vote.entity.Vote;
-import com.bubbletalk.vote.repository.VoteRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -35,13 +34,8 @@ import java.util.stream.Collectors;
 public class MenuService {
 
     private final MenuRepository menuRepository;
-    private final VoteRepository voteRepository;
     private final LunchHistoryRepository lunchHistoryRepository;
     private final RedisTemplate<String, Object> redisTemplate;
-
-    // Redis에서 사용할 키 이름 정의 (예: lunch:ranking:20240424)
-    private static final String RANKING_KEY_PREFIX = "lunch:ranking:";
-    private static final String VOTER_KEY_PREFIX = "lunch:voters:";
 
     /**
      * 새로운 메뉴를 생성하거나, 이미 있으면 자동으로 투표합니다.
@@ -60,7 +54,7 @@ public class MenuService {
             
             // Redis ZSET 초기화 (0점)
             String today = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
-            redisTemplate.opsForZSet().add(RANKING_KEY_PREFIX + today, menu.getId().toString(), 0);
+            redisTemplate.opsForZSet().add(RedisKey.LUNCH_RANKING.with(today), menu.getId().toString(), 0);
             log.info("새로운 메뉴 등록: {}", menuName);
         }
 
@@ -74,8 +68,8 @@ public class MenuService {
     @Transactional
     public void increaseVote(Long menuId, String voterIp) {
         String today = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
-        String rankingKey = RANKING_KEY_PREFIX + today;
-        String voterKey = VOTER_KEY_PREFIX + today + ":" + menuId;
+        String rankingKey = RedisKey.LUNCH_RANKING.with(today);
+        String voterKey = RedisKey.LUNCH_VOTER.with(today + ":" + menuId);
 
         // 1. [중복 방지]
         Boolean alreadyVoted = redisTemplate.opsForSet().isMember(voterKey, voterIp);
@@ -86,17 +80,6 @@ public class MenuService {
         // 2. [Redis ZSET] 점수 상승
         redisTemplate.opsForZSet().incrementScore(rankingKey, menuId.toString(), 1);
         redisTemplate.opsForSet().add(voterKey, voterIp);
-
-        // 3. [DB 영속화]
-        DailyMenu menu = menuRepository.findById(menuId)
-                .orElseThrow(() -> new IllegalArgumentException("해당 메뉴가 존재하지 않습니다. ID=" + menuId));
-        
-        voteRepository.save(Vote.builder()
-                .dailyMenu(menu)
-                .voterIp(voterIp)
-                .build());
-        
-        menu.addScore();
     }
 
     /**
@@ -105,7 +88,7 @@ public class MenuService {
     public DailyMenuResDto getTopRankings() {
         try {
             String today = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
-            String rankingKey = RANKING_KEY_PREFIX + today;
+            String rankingKey = RedisKey.LUNCH_RANKING.with(today);
 
             Set<Object> topIds = redisTemplate.opsForZSet().reverseRange(rankingKey, 0, 9);
             
@@ -145,7 +128,7 @@ public class MenuService {
     @Transactional
     public void syncRedisToDb() {
         String todayStr = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
-        String rankingKey = RANKING_KEY_PREFIX + todayStr;
+        String rankingKey = RedisKey.LUNCH_RANKING.with(todayStr);
 
         // Redis ZSET의 모든 데이터를 점수와 함께 가져옴
         Set<ZSetOperations.TypedTuple<Object>> results = 
