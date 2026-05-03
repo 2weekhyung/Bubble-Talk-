@@ -48,7 +48,6 @@ public class MenuService {
             // [신규 등록]
             menu = DailyMenu.builder()
                     .menuName(menuName)
-                    .finalScore(0L)
                     .build();
             menu = menuRepository.save(menu);
             

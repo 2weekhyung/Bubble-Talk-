@@ -5,6 +5,7 @@ import com.bubbletalk.security.dto.req.ForbiddenWordAddReqDto;
 import com.bubbletalk.security.dto.res.ForbiddenWordResDto;
 import com.bubbletalk.security.entity.ForbiddenWord;
 import com.bubbletalk.security.repository.ForbiddenWordRepository;
+import com.bubbletalk.security.service.ForbiddenWordService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;

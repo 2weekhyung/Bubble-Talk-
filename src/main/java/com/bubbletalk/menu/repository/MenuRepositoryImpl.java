@@ -6,22 +6,10 @@ import com.querydsl.jpa.impl.JPAQueryFactory;
 import lombok.RequiredArgsConstructor;
 import java.util.List;
 import java.util.Optional;
-
 @RequiredArgsConstructor
 public class MenuRepositoryImpl implements MenuRepositoryCustom {
 
     private final JPAQueryFactory queryFactory;
-
-    @Override
-    public List<DailyMenu> getTopMenus(int limit) {
-        QDailyMenu menu = QDailyMenu.dailyMenu;
-
-        return queryFactory
-                .selectFrom(menu)
-                .orderBy(menu.finalScore.desc())
-                .limit(limit)
-                .fetch();
-    }
 
     @Override
     public Optional<DailyMenu> findByMenuName(String menuName) {

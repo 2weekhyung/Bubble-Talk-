@@ -33,6 +33,12 @@ const MAINJS = {
             this.stompClient.subscribe('/topic/menus', (response) => {
                 const updatedMenus = JSON.parse(response.body);
                 this.battleItems = updatedMenus.menuList;
+                
+                // 이벤트가 종료(데이터가 비어있거나 특정 조건)되면 자동으로 상태 확인 API 호출
+                if (!this.battleItems || this.battleItems.length === 0) {
+                    this.checkEventStatus();
+                }
+
                 if (this.state === 'VOTING') this.renderVoting();
                 if (this.state === 'FINISHED') this.renderResults();
             });
@@ -40,6 +46,11 @@ const MAINJS = {
             // [구독] 실시간 채팅 메시지 수신
             this.stompClient.subscribe('/topic/bubbles', (response) => {
                 const chatMsg = JSON.parse(response.body);
+                
+                // 특정 시스템 메시지에 따라 강제 상태 전환 (선택 사항)
+                if (chatMsg.content.includes("전쟁 시작")) this.changeState('VOTING');
+                if (chatMsg.content.includes("전쟁이 종료")) this.changeState('FINISHED');
+
                 // 서버에서 보낸 시스템 메시지(메뉴 추가 등)인 경우 특수 효과(true) 적용
                 this.createBullet(chatMsg.content, chatMsg.isSystem || false);
             });
@@ -51,10 +62,14 @@ const MAINJS = {
     },
 
     /**
-     * 초기 데이터 로드
+     * 초기 데이터 로드 및 상태 체크
      */
     fetchInitialData: async function() {
         try {
+            // 1. 이벤트 상태 먼저 확인
+            await this.checkEventStatus();
+            
+            // 2. 랭킹 데이터 로드
             const response = await COMMON_AJAX.get('/api/menu/rankings');
             if (response.code === "0000") {
                 this.battleItems = response.result.menuList;
@@ -62,6 +77,21 @@ const MAINJS = {
             }
         } catch (error) {
             console.error("초기 데이터 로딩 실패:", error);
+        }
+    },
+
+    /**
+     * 서버에 현재 이벤트 상태 조회
+     */
+    checkEventStatus: async function() {
+        try {
+            const response = await COMMON_AJAX.get('/api/menu/status');
+            if (response.code === "0000") {
+                const status = response.result.status; // OPEN or CLOSED
+                this.state = (status === 'OPEN') ? 'VOTING' : 'LOCKED';
+            }
+        } catch (e) {
+            this.state = 'LOCKED';
         }
     },
 

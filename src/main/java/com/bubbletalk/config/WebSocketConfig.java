@@ -28,6 +28,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         // 웹소켓 연결 엔드포인트 설정 (SockJS 사용)
         registry.addEndpoint("/ws-bubble")
                 .setAllowedOriginPatterns("*") // 모든 오리진 허용 (개발 편의성)
+                .addInterceptors(new IpHandshakeInterceptor()) // 커스텀 IP 인터셉터 적용
                 .withSockJS();
     }
 }

@@ -27,7 +27,7 @@ public class ChatService {
 
     /**
      * [메시지 처리 로직]
-     * 채팅 내용에 금칙어가 있으면 ***로 바꾸고, 도배 여부를 확인합니다.
+     * 채팅 내용에 금칙어가 있으면 ***로 바꾸고, 도배 여부를 확인한 후 Redis에 저장합니다.
      */
     public ChatMessage processMessage(String content, String senderIp) {
         
@@ -40,24 +40,53 @@ public class ChatService {
         // 2. [금칙어 필터링] Redis 캐시에서 목록을 가져옵니다. (고속 조회)
         List<String> forbiddenWords = forbiddenWordService.getForbiddenWords();
 
-        // 사용자가 보낸 문장에서 금칙어를 찾아 ***로 치환합니다.
         String filteredContent = content;
-        boolean isFiltered = false;
-        
         for (String word : forbiddenWords) {
             if (filteredContent.contains(word)) {
-                log.info("금칙어 감지됨: '{}' (작성자 IP: {})", word, senderIp);
                 String replacement = "*".repeat(word.length());
                 filteredContent = filteredContent.replace(word, replacement);
-                isFiltered = true;
             }
         }
 
-        if (isFiltered) {
-            log.info("필터링 적용 완료: {} -> {}", content, filteredContent);
-        }
+        // 3. [메시지 객체 생성 및 Redis 저장]
+        ChatMessage chatMessage = ChatMessage.create(senderIp, filteredContent);
+        saveMessageToRedis(chatMessage);
+
+        return chatMessage;
+    }
+
+    /**
+     * [메시지 휘발성 관리]
+     * Redis에 메시지를 저장하고 10초 뒤에 자동으로 삭제되도록 설정합니다.
+     */
+    private void saveMessageToRedis(ChatMessage message) {
+        String messageId = java.util.UUID.randomUUID().toString();
+        String key = RedisKey.CHAT_BUBBLE.with(messageId);
+
+        // Redis에 메시지 저장 (10초 후 자동 소멸)
+        redisTemplate.opsForValue().set(key, message, 10, TimeUnit.SECONDS);
+        log.info("메시지 Redis 저장 완료 (TTL 10s): {}", key);
+    }
+
+    /**
+     * [활성 메시지 조회]
+     * 현재 Redis에 남아있는 (10초가 지나지 않은) 모든 메시지를 가져옵니다.
+     * 새로운 접속자가 기존에 떠다니던 버블들을 볼 수 있게 합니다.
+     */
+    public List<ChatMessage> getActiveMessages() {
+        // chat:bubble:* 패턴에 매칭되는 모든 키를 찾습니다.
+        java.util.Set<String> keys = redisTemplate.keys(RedisKey.CHAT_BUBBLE.getPrefix() + "*");
         
-        return ChatMessage.create(senderIp, filteredContent);
+        if (keys == null || keys.isEmpty()) {
+            return List.of();
+        }
+
+        // 키들에 해당하는 값(ChatMessage)을 한꺼번에 가져와 리스트로 반환합니다.
+        return redisTemplate.opsForValue().multiGet(keys).stream()
+                .filter(obj -> obj instanceof ChatMessage)
+                .map(obj -> (ChatMessage) obj)
+                .sorted((m1, m2) -> m1.getTimestamp().compareTo(m2.getTimestamp())) // 시간순 정렬
+                .toList();
     }
 
     /**
@@ -66,13 +95,13 @@ public class ChatService {
      */
     private boolean isRateLimited(String ip) {
         String key = RedisKey.CHAT_RATELIMIT.with(ip);
-        
+
         Long count = redisTemplate.opsForValue().increment(key);
         
         if (count != null && count == 1) {
             redisTemplate.expire(key, 1, TimeUnit.SECONDS);
         }
-        
+
         return count != null && count > 3;
     }
 }

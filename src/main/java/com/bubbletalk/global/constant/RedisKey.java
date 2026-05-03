@@ -24,6 +24,12 @@ public enum RedisKey {
     CHAT_FORBIDDEN("chat:forbidden"),
 
     /**
+     * 채팅 메시지 버블 저장용 키 (Value, Prefix)
+     * 구조: chat:bubble:{uuid}
+     */
+    CHAT_BUBBLE("chat:bubble:"),
+
+    /**
      * 점심 메뉴 실시간 랭킹 키 (ZSet, Prefix)
      * 구조: lunch:ranking:{yyyyMMdd}
      */
@@ -33,7 +39,13 @@ public enum RedisKey {
      * 투표자 중복 체크용 키 (Set, Prefix)
      * 구조: lunch:voters:{yyyyMMdd}:{menuId}
      */
-    LUNCH_VOTER("lunch:voters:");
+    LUNCH_VOTER("lunch:voters:"),
+
+    /**
+     * 점심 메뉴 타임 어택 활성화 상태 키 (Value)
+     * 구조: lunch:event:status
+     */
+    LUNCH_EVENT_STATUS("lunch:event:status");
 
     private final String prefix;
 

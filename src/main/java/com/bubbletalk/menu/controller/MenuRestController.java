@@ -1,14 +1,18 @@
 package com.bubbletalk.menu.controller;
 
 import com.bubbletalk.base.dto.BaseResDto;
+import com.bubbletalk.global.constant.RedisKey;
 import com.bubbletalk.menu.dto.req.MenuAddReqDto;
 import com.bubbletalk.menu.dto.req.MenuVoteReqDto;
 import com.bubbletalk.menu.dto.res.DailyMenuResDto;
 import com.bubbletalk.menu.service.MenuService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.Map;
 
 /**
  * [메뉴 및 투표 관련 REST API 컨트롤러]
@@ -21,6 +25,17 @@ public class MenuRestController {
 
     private final MenuService menuService;
     private final MenuSocketController socketController;
+    private final RedisTemplate<String, Object> redisTemplate;
+
+    /**
+     * [GET] /api/menu/status
+     * 현재 점심 이벤트 활성화 상태를 조회합니다.
+     */
+    @GetMapping("/status")
+    public ResponseEntity<BaseResDto> getStatus() {
+        Object status = redisTemplate.opsForValue().get(RedisKey.LUNCH_EVENT_STATUS.getPrefix());
+        return ResponseEntity.ok(BaseResDto.ok(Map.of("status", status != null ? status : "CLOSED")));
+    }
 
     /**
      * [GET] /api/menu/rankings
