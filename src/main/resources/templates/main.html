@@ -6,48 +6,53 @@
 
 <th:block layout:fragment="content">
     <!-- 대나무숲 섹션 (팝업형) -->
-    <section class="relative h-44 border-b border-slate-800 bg-slate-950 overflow-hidden shrink-0" id="bamboo-forest">
+    <section class="relative h-40 md:h-52 border-b border-slate-800 bg-slate-950 overflow-hidden shrink-0" id="bamboo-forest">
         <div id="bullet-container" class="absolute inset-0"></div>
         <!-- 메시지 입력 폼 -->
-        <div class="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 w-full max-w-md px-4">
+        <div class="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 w-full max-w-lg px-4">
             <form id="msg-form" class="relative">
                 <input type="text" id="msg-input" placeholder="익명으로 한마디 쏘기..."
-                       class="w-full bg-slate-900/90 border border-slate-700 rounded-full py-2.5 px-6 pr-12 focus:outline-none focus:border-green-500 text-sm shadow-2xl">
-                <button type="submit" class="absolute right-1.5 top-1/2 -translate-y-1/2 w-8 h-8 bg-green-500 text-slate-900 rounded-full flex items-center justify-center">
-                    <i class="fa-solid fa-arrow-up text-xs"></i>
+                       class="w-full bg-slate-900/90 border border-slate-700 rounded-full py-2.5 md:py-3 px-6 pr-12 focus:outline-none focus:border-green-500 text-sm md:text-base shadow-2xl">
+                <button type="submit" class="absolute right-1.5 top-1/2 -translate-y-1/2 w-8 h-8 md:w-10 md:h-10 bg-green-500 text-slate-900 rounded-full flex items-center justify-center hover:bg-green-400 transition-colors">
+                    <i class="fa-solid fa-arrow-up text-xs md:text-sm"></i>
                 </button>
             </form>
         </div>
     </section>
 
     <!-- 메인 전장 영역 -->
-    <main class="flex-1 overflow-y-auto custom-scroll bg-[#0f172a] p-4 relative">
+    <main class="flex-1 overflow-y-auto custom-scroll bg-[#0f172a] p-4 md:p-8 relative">
 
         <!-- [상태 1] 대기 화면 (11시 이전) -->
         <div id="state-locked" class="hidden flex flex-col items-center justify-center py-20 text-center">
-            <div class="w-24 h-24 bg-slate-800 rounded-full flex items-center justify-center mb-6 animate-pulse border-4 border-slate-700">
-                <i class="fa-solid fa-hourglass-start text-4xl text-slate-500"></i>
+            <div class="w-24 h-24 md:w-32 md:h-32 bg-slate-800 rounded-full flex items-center justify-center mb-6 animate-pulse border-4 border-slate-700">
+                <i class="fa-solid fa-hourglass-start text-4xl md:text-5xl text-slate-500"></i>
             </div>
-            <h2 class="text-2xl font-black mb-2 italic">전쟁 대기 중...</h2>
-            <p class="text-slate-500 text-sm mb-8">매일 오전 11시, 당신의 메뉴를 전장에 투입하세요.</p>
+            <h2 class="text-2xl md:text-4xl font-black mb-2 italic">전쟁 대기 중...</h2>
+            <p class="text-slate-500 text-sm md:text-base mb-8">매일 오전 11시, 당신의 메뉴를 전장에 투입하세요.</p>
             <button onclick="MAINJS.changeState('VOTING')" class="px-8 py-3 bg-green-500/10 border border-green-500/30 rounded-xl text-green-500 font-bold hover:bg-green-500 hover:text-slate-900 transition-all">전투 강제 개시</button>
         </div>
 
         <!-- [상태 2] 실시간 전장 (11시 ~ 12시) -->
-        <div id="state-voting" class="tab-content active">
+        <div id="state-voting" class="tab-content active max-w-6xl mx-auto">
             <div class="sticky top-0 bg-[#0f172a]/95 backdrop-blur-sm z-30 pb-4 mb-4 border-b border-slate-800/50">
-                <h3 class="text-xl font-black italic mb-1"><i class="fa-solid fa-fire text-orange-500 mr-2"></i>실시간 메뉴 난투극</h3>
-                <p class="text-[11px] text-slate-500 uppercase tracking-tighter">Anonymous Real-time Voting & Adding</p>
+                <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-2">
+                    <div>
+                        <h3 class="text-xl md:text-2xl font-black italic mb-1"><i class="fa-solid fa-fire text-orange-500 mr-2"></i>실시간 메뉴 난투극</h3>
+                        <p class="text-[10px] md:text-[12px] text-slate-500 uppercase tracking-tighter">Anonymous Real-time Voting & Adding</p>
+                    </div>
+                </div>
 
                 <!-- 메뉴 직접 추가 폼 -->
                 <div class="mt-4 flex gap-2">
                     <input type="text" id="add-menu-input" placeholder="나만의 점심 메뉴 투입!"
-                           class="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-green-500">
-                    <button onclick="MAINJS.addNewMenu()" class="bg-green-500 text-slate-900 font-black px-6 rounded-xl hover:bg-green-400 active:scale-95 transition-all">추가</button>
+                           class="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-sm md:text-base focus:outline-none focus:border-green-500">
+                    <button onclick="MAINJS.addNewMenu()" class="bg-green-500 text-slate-900 font-black px-6 md:px-10 rounded-xl hover:bg-green-400 active:scale-95 transition-all">추가</button>
                 </div>
             </div>
 
-            <div id="voting-grid" class="grid grid-cols-1 gap-3">
+            <!-- 반응형 그리드: 모바일 1열 / 태블릿 2열 / 데스크탑 3열 -->
+            <div id="voting-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
                 <!-- 메뉴 카드가 동적으로 생성됨 -->
             </div>
 
@@ -57,29 +62,29 @@
         </div>
 
         <!-- [상태 3] 결과 발표 (12시 이후) -->
-        <div id="state-finished" class="hidden">
+        <div id="state-finished" class="hidden max-w-4xl mx-auto">
             <div class="text-center mb-8">
-                <h2 class="text-3xl font-black italic text-yellow-500 mb-2">FINAL VICTORY</h2>
-                <p class="text-slate-500 text-sm">오늘 점심은 이 메뉴들이 점령했습니다.</p>
+                <h2 class="text-3xl md:text-5xl font-black italic text-yellow-500 mb-2">FINAL VICTORY</h2>
+                <p class="text-slate-500 text-sm md:text-base">오늘 점심은 이 메뉴들이 점령했습니다.</p>
             </div>
 
-            <!-- TOP 3 시상대 -->
-            <div class="flex items-end justify-center gap-3 mb-10 h-56 px-4">
+            <!-- 반응형 TOP 3 시상대 -->
+            <div class="flex items-end justify-center gap-2 md:gap-6 mb-10 h-64 md:h-80 px-2">
                 <!-- 2등 -->
-                <div class="flex flex-col items-center w-1/3 max-w-[100px]">
-                    <span class="text-[10px] font-bold text-slate-400 mb-2 truncate w-full text-center" id="rank-2-name">-</span>
-                    <div class="podium-bar podium-2 w-full rounded-t-xl shadow-lg flex items-center justify-center text-slate-900 font-black text-2xl h-[100px]">2</div>
+                <div class="flex flex-col items-center w-1/3 max-w-[120px]">
+                    <span class="text-[11px] md:text-sm font-bold text-slate-400 mb-2 truncate w-full text-center" id="rank-2-name">-</span>
+                    <div class="podium-bar podium-2 w-full rounded-t-xl shadow-lg flex items-center justify-center text-slate-900 font-black text-2xl md:text-4xl h-[120px] md:h-[180px]">2</div>
                 </div>
                 <!-- 1등 -->
-                <div class="flex flex-col items-center w-1/3 max-w-[120px]">
-                    <div class="text-3xl mb-1 animate-bounce">👑</div>
-                    <span class="text-sm font-black text-yellow-500 mb-2 truncate w-full text-center" id="rank-1-name">-</span>
-                    <div class="podium-bar podium-1 w-full rounded-t-xl shadow-[0_0_30px_rgba(234,179,8,0.3)] flex items-center justify-center text-slate-900 font-black text-4xl h-[140px]">1</div>
+                <div class="flex flex-col items-center w-1/3 max-w-[150px]">
+                    <div class="text-3xl md:text-5xl mb-1 animate-bounce">👑</div>
+                    <span class="text-sm md:text-lg font-black text-yellow-500 mb-2 truncate w-full text-center" id="rank-1-name">-</span>
+                    <div class="podium-bar podium-1 w-full rounded-t-xl shadow-[0_0_40px_rgba(234,179,8,0.3)] flex items-center justify-center text-slate-900 font-black text-4xl md:text-6xl h-[160px] md:h-[240px]">1</div>
                 </div>
                 <!-- 3등 -->
-                <div class="flex flex-col items-center w-1/3 max-w-[90px]">
-                    <span class="text-[10px] font-bold text-amber-700 mb-2 truncate w-full text-center" id="rank-3-name">-</span>
-                    <div class="podium-bar podium-3 w-full rounded-t-xl shadow-lg flex items-center justify-center text-slate-900 font-black text-xl h-[70px]">3</div>
+                <div class="flex flex-col items-center w-1/3 max-w-[110px]">
+                    <span class="text-[10px] md:text-xs font-bold text-amber-700 mb-2 truncate w-full text-center" id="rank-3-name">-</span>
+                    <div class="podium-bar podium-3 w-full rounded-t-xl shadow-lg flex items-center justify-center text-slate-900 font-black text-xl md:text-3xl h-[90px] md:h-[130px]">3</div>
                 </div>
             </div>
 

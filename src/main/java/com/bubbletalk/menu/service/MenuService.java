@@ -2,6 +2,7 @@ package com.bubbletalk.menu.service;
 
 import com.bubbletalk.base.dto.BaseResDto;
 import com.bubbletalk.global.constant.RedisKey;
+import com.bubbletalk.global.exception.BusinessException;
 import com.bubbletalk.menu.dto.res.DailyMenuResDto;
 import com.bubbletalk.menu.dto.res.MenuListResDto;
 import com.bubbletalk.menu.entity.DailyMenu;
@@ -73,7 +74,7 @@ public class MenuService {
         // 1. [중복 방지]
         Boolean alreadyVoted = redisTemplate.opsForSet().isMember(voterKey, voterIp);
         if (Boolean.TRUE.equals(alreadyVoted)) {
-            throw new IllegalStateException("이미 이 메뉴에 화력을 지원하셨습니다!");
+            throw new BusinessException("이미 이 메뉴에 화력을 지원하셨습니다!");
         }
 
         // 2. [Redis ZSET] 점수 상승

@@ -22,35 +22,41 @@ body {
     white-space: nowrap;
     will-change: transform, opacity;
     pointer-events: none;
-    background: rgba(255, 255, 255, 0.1);
+    background: rgba(15, 23, 42, 0.8); /* 배경을 조금 더 어둡게 하여 가독성 향상 */
     backdrop-filter: blur(8px);
-    padding: 10px 18px;
+    padding: 8px 14px;
     border-radius: 20px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
     font-weight: 700;
-    font-size: 0.9rem;
-    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+    font-size: 0.8rem;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
     z-index: 10;
     letter-spacing: -0.02em;
 }
 
-/* 버블이 나타났다 사라지는 애니메이션 */
-@keyframes popAndStay {
-    0% { transform: scale(0) translateY(10px); opacity: 0; }
-    15% { transform: scale(1.1) translateY(0); opacity: 1; }
-    20% { transform: scale(1) translateY(0); opacity: 1; }
-    80% { transform: scale(1) translateY(-5px); opacity: 1; }
-    100% { transform: scale(0.9) translateY(-15px); opacity: 0; }
+@media (min-width: 768px) {
+    .bullet-msg {
+        padding: 10px 18px;
+        font-size: 0.95rem;
+    }
 }
 
 /* [메뉴 카드 - 전장 아이템] */
 .battle-card {
-    background: rgba(30, 41, 59, 0.5);
+    background: rgba(30, 41, 59, 0.4);
     border: 1px solid rgba(255, 255, 255, 0.05);
-    border-radius: 24px;
+    border-radius: 20px;
+    padding: 16px;
     transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
     position: relative;
     overflow: hidden;
+}
+
+@media (min-width: 768px) {
+    .battle-card {
+        border-radius: 24px;
+        padding: 20px;
+    }
 }
 
 .battle-card:hover {

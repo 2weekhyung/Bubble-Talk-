@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org"
+      xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout"
+      layout:decorate="~{layout/default}">
+<head>
+    <title>에러 발생 - BubbleTalk</title>
+    <style>
+        .error-container {
+            text-align: center;
+            padding: 100px 20px;
+        }
+        .error-code {
+            font-size: 80px;
+            font-weight: bold;
+            color: #ff6b6b;
+            margin-bottom: 20px;
+        }
+        .error-message {
+            font-size: 24px;
+            color: #495057;
+            margin-bottom: 30px;
+        }
+        .back-btn {
+            display: inline-block;
+            padding: 12px 24px;
+            background-color: #5c7cfa;
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            transition: background 0.2s;
+        }
+        .back-btn:hover {
+            background-color: #4263eb;
+        }
+    </style>
+</head>
+<div layout:fragment="content">
+    <div class="error-container">
+        <div class="error-code">⚠️</div>
+        <div class="error-message">
+            <p th:text="${message}">문제가 발생했습니다.</p>
+        </div>
+        <a href="/" class="back-btn">메인으로 돌아가기</a>
+    </div>
+</div>
+</html>
