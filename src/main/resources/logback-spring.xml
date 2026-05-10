@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <!-- 로그 파일 저장 경로 -->
+    <property name="LOG_PATH" value="./logs" />
+    <!-- 로그 파일 이름 -->
+    <property name="LOG_FILE_NAME" value="bubble-talk" />
+    <!-- 로그 출력 패턴 (날짜 시분초 [쓰레드] 레벨 클래스명 - 메시지) -->
+    <property name="LOG_PATTERN" value="%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n" />
+
+    <!-- 1. 콘솔(Console) 앱엔더: 터미널에 로그 출력 -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>${LOG_PATTERN}</pattern>
+        </encoder>
+    </appender>
+
+    <!-- 2. 롤링 파일(Rolling File) 앱엔더: 날짜별로 파일 저장 -->
+    <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <!-- 현재 로그 파일 -->
+        <file>${LOG_PATH}/${LOG_FILE_NAME}.log</file>
+
+        <!-- 로그 로테이션 정책 -->
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <!-- 날짜별 파일 패턴 (자동 압축 포함) -->
+            <fileNamePattern>${LOG_PATH}/archive/${LOG_FILE_NAME}-%d{yyyy-MM-dd}.log.gz</fileNamePattern>
+            <!-- 최대 보관 일수 (30일) -->
+            <maxHistory>30</maxHistory>
+            <!-- 전체 로그 용량 제한 (저사양 서버 보호를 위해 3GB 제한) -->
+            <totalSizeCap>3GB</totalSizeCap>
+        </rollingPolicy>
+
+        <encoder>
+            <pattern>${LOG_PATTERN}</pattern>
+        </encoder>
+    </appender>
+
+    <!-- 프로젝트 전체 기본 로그 레벨 (INFO) -->
+    <root level="INFO">
+        <appender-ref ref="CONSOLE" />
+        <appender-ref ref="FILE" />
+    </root>
+
+    <!-- 우리 애플리케이션 코드는 상세히 기록 (DEBUG) -->
+    <logger name="com.bubbletalk" level="DEBUG" additivity="false">
+        <appender-ref ref="CONSOLE" />
+        <appender-ref ref="FILE" />
+    </logger>
+
+    <!-- SQL 실행 로그도 확인하고 싶을 때 (옵션) -->
+    <logger name="org.hibernate.SQL" level="DEBUG" additivity="false">
+        <appender-ref ref="CONSOLE" />
+        <appender-ref ref="FILE" />
+    </logger>
+</configuration>
