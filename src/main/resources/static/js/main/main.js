@@ -55,6 +55,15 @@ const MAINJS = {
                 this.createBullet(chatMsg.content, chatMsg.isSystem || false);
             });
 
+            // [구독] 실시간 접속자 수 업데이트
+            this.stompClient.subscribe('/topic/user-count', (response) => {
+                const count = JSON.parse(response.body);
+                const userCountEl = document.getElementById('user-count');
+                if (userCountEl) {
+                    userCountEl.innerText = count.toLocaleString();
+                }
+            });
+
         }, (error) => {
             console.error('WebSocket 접속 에러:', error);
             setTimeout(() => this.connectWebSocket(), 5000);

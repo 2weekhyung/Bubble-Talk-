@@ -39,7 +39,7 @@ public class LunchEventInterceptor implements HandlerInterceptor {
 
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("code", "4030");
-            errorResponse.put("message", "🔒 지금은 휴전 중입니다. (전쟁 시간: 11:00 ~ 12:00)");
+            errorResponse.put("message", "🔒 지금은 휴전 중입니다. (전쟁 시간: 09:00 ~ 14:00)");
 
             response.getWriter().write(objectMapper.writeValueAsString(errorResponse));
             return false;

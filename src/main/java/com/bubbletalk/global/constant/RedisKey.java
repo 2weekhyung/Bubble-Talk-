@@ -30,6 +30,12 @@ public enum RedisKey {
     CHAT_BUBBLE("chat:bubble:"),
 
     /**
+     * 실시간 접속자 수 저장용 키 (Value)
+     * 구조: chat:user:count
+     */
+    CHAT_USER_COUNT("chat:user:count"),
+
+    /**
      * 점심 메뉴 실시간 랭킹 키 (ZSet, Prefix)
      * 구조: lunch:ranking:{yyyyMMdd}
      */

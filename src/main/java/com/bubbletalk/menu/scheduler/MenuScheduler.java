@@ -19,10 +19,10 @@ public class MenuScheduler {
     private final RedisTemplate<String, Object> redisTemplate;
 
     /**
-     * [정산] 매일 12시 0분 0초에 실행
+     * [정산] 매일 14시 0분 0초에 실행
      * Redis 데이터를 DB로 이관하고 소켓으로 정산 완료를 알립니다.
      */
-    @Scheduled(cron = "0 0 12 * * *")
+    @Scheduled(cron = "0 0 14 * * *")
     public void finishLunchVote() {
         log.info("점심 메뉴 투표 정산을 시작합니다...");
         
@@ -40,18 +40,18 @@ public class MenuScheduler {
     }
 
     /**
-     * [알림] 매일 11시 0분 0초에 실행
+     * [알림] 매일 9시 0분 0초에 실행
      * 투표 시작을 알리고 이벤트를 활성화합니다.
      */
-    @Scheduled(cron = "0 0 11 * * *")
+    @Scheduled(cron = "0 0 9 * * *")
     public void startLunchVote() {
-        log.info("점심 메뉴 투표 타임어택이 시작되었습니다! (11:00 ~ 12:00)");
+        log.info("점심 메뉴 투표 타임어택이 시작되었습니다! (09:00 ~ 14:00)");
         
         // 1. 이벤트 상태 활성화
         redisTemplate.opsForValue().set(RedisKey.LUNCH_EVENT_STATUS.getPrefix(), "OPEN");
 
         // 2. 소켓 알림
-        socketController.broadcastSystemMessage("🔥 점심 전쟁 시작! (11:00 ~ 12:00)");
+        socketController.broadcastSystemMessage("🔥 점심 전쟁 시작! (09:00 ~ 14:00)");
         socketController.broadcastMenuUpdate();
     }
 }

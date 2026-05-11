@@ -29,8 +29,10 @@
                 <i class="fa-solid fa-hourglass-start text-4xl md:text-5xl text-slate-500"></i>
             </div>
             <h2 class="text-2xl md:text-4xl font-black mb-2 italic">전쟁 대기 중...</h2>
-            <p class="text-slate-500 text-sm md:text-base mb-8">매일 오전 11시, 당신의 메뉴를 전장에 투입하세요.</p>
+            <p class="text-slate-500 text-sm md:text-base mb-8">매일 오전 09시, 당신의 메뉴를 전장에 투입하세요.</p>
+            <!-- [테스트용] 전투 강제 개시 버튼 주석 처리
             <button onclick="MAINJS.changeState('VOTING')" class="px-8 py-3 bg-green-500/10 border border-green-500/30 rounded-xl text-green-500 font-bold hover:bg-green-500 hover:text-slate-900 transition-all">전투 강제 개시</button>
+            -->
         </div>
 
         <!-- [상태 2] 실시간 전장 (11시 ~ 12시) -->
@@ -56,9 +58,11 @@
                 <!-- 메뉴 카드가 동적으로 생성됨 -->
             </div>
 
+            <!-- [테스트용] 투표 종료 시뮬레이션 버튼 주석 처리
             <div class="mt-8 text-center">
                 <button onclick="MAINJS.changeState('FINISHED')" class="text-xs text-slate-700 underline">투표 종료 시뮬레이션 (12:00 PM)</button>
             </div>
+            -->
         </div>
 
         <!-- [상태 3] 결과 발표 (12시 이후) -->
@@ -98,7 +102,9 @@
 
             <div class="text-center mt-6">
                 <button id="btn-show-more" onclick="MAINJS.showFullRanking()" class="px-6 py-2 border border-slate-700 rounded-full text-xs font-bold text-slate-400 hover:bg-slate-800 hover:text-white transition-all">전체 순위 보기 <i class="fa-solid fa-chevron-down ml-1"></i></button>
+                <!-- [테스트용] 다시 테스트하기 버튼 주석 처리
                 <button onclick="MAINJS.changeState('VOTING')" class="block mx-auto mt-10 text-[10px] text-slate-800">다시 테스트하기</button>
+                -->
             </div>
         </div>
 
