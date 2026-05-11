@@ -40,3 +40,8 @@ Thumbs.db
 # --- Database / Infrastructure (Docker) ---
 # 도커 데이터 저장소 등이 프로젝트 하위에 있을 경우 제외
 /data/
+
+
+# Docker volumes
+mysql_data/
+redis_data/
