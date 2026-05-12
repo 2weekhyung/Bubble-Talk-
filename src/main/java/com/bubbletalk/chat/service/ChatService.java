@@ -34,7 +34,7 @@ public class ChatService {
         // 1. [도배 방지] Redis를 이용한 Rate Limiting
         if (isRateLimited(senderIp)) {
             log.warn("도배 감지: IP={}", senderIp);
-            return ChatMessage.create("SYSTEM", "⚠️ 메시지 전송이 너무 빠릅니다. (1초당 3회 제한)");
+            throw new com.bubbletalk.global.exception.BusinessException("⚠️ 메시지 전송이 너무 빠릅니다. (1초당 3회 제한)");
         }
 
         // 2. [금칙어 필터링] Redis 캐시에서 목록을 가져옵니다. (고속 조회)

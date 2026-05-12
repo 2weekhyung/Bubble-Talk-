@@ -3,11 +3,14 @@ package com.bubbletalk.menu.scheduler;
 import com.bubbletalk.global.constant.RedisKey;
 import com.bubbletalk.menu.controller.MenuSocketController;
 import com.bubbletalk.menu.service.MenuService;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+
+import java.time.LocalTime;
 
 @Slf4j
 @Component
@@ -17,6 +20,23 @@ public class MenuScheduler {
     private final MenuService menuService;
     private final MenuSocketController socketController;
     private final RedisTemplate<String, Object> redisTemplate;
+
+    /**
+     * [서버 시작 시 초기화]
+     * 서버가 재시작되어도 현재 시간이 투표 시간(09:00~14:00)이라면 상태를 OPEN으로 설정합니다.
+     */
+    @PostConstruct
+    public void init() {
+        LocalTime now = LocalTime.now();
+        if (now.isAfter(LocalTime.of(9, 0)) && now.isBefore(LocalTime.of(14, 0))) {
+            redisTemplate.opsForValue().set(RedisKey.LUNCH_EVENT_STATUS.getPrefix(), "OPEN");
+            log.info("[초기화] 현재 시간({})은 투표 시간입니다. 상태를 OPEN으로 설정합니다.", now);
+        } else {
+            // 그 외 시간대에는 CLOSED로 설정하되, 이미 데이터가 있을 수 있으므로 상태만 변경
+            redisTemplate.opsForValue().set(RedisKey.LUNCH_EVENT_STATUS.getPrefix(), "CLOSED");
+            log.info("[초기화] 현재 시간({})은 투표 시간이 아닙니다. 상태를 CLOSED로 설정합니다.", now);
+        }
+    }
 
     /**
      * [정산] 매일 14시 0분 0초에 실행

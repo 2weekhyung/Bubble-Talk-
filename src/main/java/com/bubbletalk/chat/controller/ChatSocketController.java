@@ -2,11 +2,14 @@ package com.bubbletalk.chat.controller;
 
 import com.bubbletalk.chat.entity.ChatMessage;
 import com.bubbletalk.chat.service.ChatService;
+import com.bubbletalk.global.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.messaging.handler.annotation.MessageExceptionHandler;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.SendTo;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
+import org.springframework.messaging.simp.annotation.SendToUser;
 import org.springframework.stereotype.Controller;
 
 @Slf4j
@@ -35,5 +38,15 @@ public class ChatSocketController {
 
         // ChatService를 통해 필터링, 도배 방지, Redis 저장 후 반환
         return chatService.processMessage(content, clientIp);
+    }
+
+    /**
+     * [도배/비즈니스 예외 처리]
+     * 채팅 처리 중 BusinessException(도배 등)이 발생하면 호출한 본인에게만 메시지를 보냅니다.
+     */
+    @MessageExceptionHandler(BusinessException.class)
+    @SendToUser("/topic/errors")
+    public ChatMessage handleException(BusinessException e) {
+        return ChatMessage.create("SYSTEM", e.getMessage());
     }
 }

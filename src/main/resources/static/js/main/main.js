@@ -51,8 +51,9 @@ const MAINJS = {
                 if (chatMsg.content.includes("전쟁 시작")) this.changeState('VOTING');
                 if (chatMsg.content.includes("전쟁이 종료")) this.changeState('FINISHED');
 
-                // 서버에서 보낸 시스템 메시지(메뉴 추가 등)인 경우 특수 효과(true) 적용
-                this.createBullet(chatMsg.content, chatMsg.isSystem || false);
+                // 발신자 IP에 따른 버블 생성 (SYSTEM 여부 확인)
+                const isSystem = chatMsg.senderIp === 'SYSTEM';
+                this.createBullet(chatMsg.content, chatMsg.senderIp, isSystem);
             });
 
             // [구독] 실시간 접속자 수 업데이트
@@ -62,6 +63,12 @@ const MAINJS = {
                 if (userCountEl) {
                     userCountEl.innerText = count.toLocaleString();
                 }
+            });
+
+            // [구독] 나에게만 오는 에러/알림 메시지 (도배 방지 등)
+            this.stompClient.subscribe('/user/topic/errors', (response) => {
+                const chatMsg = JSON.parse(response.body);
+                this.createBullet(chatMsg.content, chatMsg.senderIp, true);
             });
 
         }, (error) => {
@@ -120,7 +127,7 @@ const MAINJS = {
         } catch (error) {
             console.error("메뉴 추가/투표 에러:", error);
             // 에러 메시지(중복 투표 등)를 버블로 표시
-            this.createBullet(`❌ ${error.message}`, false);
+            this.createBullet(`❌ ${error.message}`, CLIENT_IP, false);
             input.value = '';
         }
     },
@@ -133,11 +140,11 @@ const MAINJS = {
         try {
             const response = await COMMON_AJAX.post('/api/menu/vote', { menuId: Number(menuId) });
             if (response.code === "0000") {
-                this.createBullet(`${menuName} +1 화력 지원!`, true);
+                this.createBullet(`${menuName} +1 화력 지원!`, 'SYSTEM', true);
             }
         } catch (error) {
             console.error("투표 에러:", error);
-            this.createBullet(`❌ ${error.message}`, false);
+            this.createBullet(`❌ ${error.message}`, CLIENT_IP, false);
         }
     },
 
@@ -270,7 +277,7 @@ const MAINJS = {
      * [개선] 다채로운 색상의 팝업 버블 생성
      * 메시지가 화면 곳곳에서 랜덤하게 튀어나와 '왁자지껄'한 분위기를 연출합니다.
      */
-    createBullet: function(text, isSpecial = false) {
+    createBullet: function(text, senderIp, isSpecial = false) {
         const container = document.getElementById('bullet-container');
         if (!container) return;
         
@@ -278,32 +285,55 @@ const MAINJS = {
         el.className = 'bullet-msg';
         
         if (isSpecial) {
+            // [SYSTEM] 공지 스타일
             el.style.border = '2px solid #22c55e';
             el.style.color = '#ffffff';
             el.style.background = 'rgba(34, 197, 94, 0.5)';
             el.style.boxShadow = '0 0 20px rgba(34, 197, 94, 0.3)';
             el.style.zIndex = '100';
+        } else if (senderIp === CLIENT_IP) {
+            // [MY] 내 메시지 강조
+            el.style.border = '2px solid #3b82f6';
+            el.style.color = '#ffffff';
+            el.style.background = 'rgba(59, 130, 246, 0.6)';
+            el.style.boxShadow = '0 0 15px rgba(59, 130, 246, 0.4)';
+            el.style.fontWeight = 'bold';
+            el.style.zIndex = '90';
         } else {
+            // [OTHERS] 타인 메시지 (IP 기반 고정 색상)
             const colors = [
-                'rgba(147, 197, 253, 0.25)', // Blue
-                'rgba(196, 181, 253, 0.25)', // Purple
-                'rgba(167, 243, 208, 0.25)', // Green
-                'rgba(253, 186, 116, 0.25)', // Orange
-                'rgba(244, 114, 182, 0.25)'  // Pink
+                'rgba(147, 197, 253, 0.35)', // Blue
+                'rgba(196, 181, 253, 0.35)', // Purple
+                'rgba(167, 243, 208, 0.35)', // Green
+                'rgba(253, 186, 116, 0.35)', // Orange
+                'rgba(244, 114, 182, 0.35)', // Pink
+                'rgba(148, 163, 184, 0.35)'  // Slate
             ];
-            const randomColor = colors[Math.floor(Math.random() * colors.length)];
-            el.style.background = randomColor;
-            el.style.borderColor = 'rgba(255, 255, 255, 0.15)';
+            
+            // IP를 이용한 간단한 해시 함수로 색상 결정
+            let hash = 0;
+            if (senderIp) {
+                for (let i = 0; i < senderIp.length; i++) {
+                    hash = senderIp.charCodeAt(i) + ((hash << 5) - hash);
+                }
+            }
+            const colorIndex = Math.abs(hash) % colors.length;
+            const selectedColor = colors[colorIndex];
+            
+            el.style.background = selectedColor;
+            el.style.borderColor = 'rgba(255, 255, 255, 0.2)';
             el.style.color = '#f8fafc';
         }
         
         el.innerText = text;
+        // 입력창(하단)에 가려지지 않도록 범위를 상단 10% ~ 55% 정도로 제한
         const left = Math.random() * 80 + 5;
-        const top = Math.random() * 65 + 10;
+        const top = Math.random() * 45 + 10;
         const duration = isSpecial ? 4.5 : 3 + Math.random() * 1.5;
         
         el.style.left = `${left}%`;
         el.style.top = `${top}%`;
+        el.style.zIndex = isSpecial ? '100' : (senderIp === CLIENT_IP ? '95' : '50'); // 기본 버블도 입력폼(20)보다 높게 설정
         el.style.animation = `popAndStay ${duration}s ease-in-out forwards`;
         
         container.appendChild(el);
