@@ -16,6 +16,39 @@ const MAINJS = {
         this.fetchInitialData();
         this.bindEvents();
         this.startTimers();
+        this.initResizer();
+    },
+
+    /**
+     * 리사이저 초기화 (채팅 영역 높이 조절)
+     */
+    initResizer: function() {
+        const resizer = document.getElementById('h-resizer');
+        const bamboo = document.getElementById('bamboo-forest');
+        if (!resizer || !bamboo) return;
+
+        let isResizing = false;
+
+        resizer.addEventListener('mousedown', (e) => {
+            isResizing = true;
+            document.body.classList.add('resizing');
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (!isResizing) return;
+
+            // 최소 100px, 최대 화면의 60%로 제한
+            let newHeight = e.clientY;
+            if (newHeight < 100) newHeight = 100;
+            if (newHeight > window.innerHeight * 0.6) newHeight = window.innerHeight * 0.6;
+
+            bamboo.style.height = `${newHeight}px`;
+        });
+
+        document.addEventListener('mouseup', () => {
+            isResizing = false;
+            document.body.classList.remove('resizing');
+        });
     },
 
     /**
@@ -122,6 +155,7 @@ const MAINJS = {
         try {
             const response = await COMMON_AJAX.post('/api/menu/add', { menuName: name });
             if (response.code === "0000") {
+                this.createBullet(`🚀 [${name}] 전장 투입!`, 'SYSTEM', true);
                 input.value = '';
             }
         } catch (error) {
@@ -144,6 +178,7 @@ const MAINJS = {
             }
         } catch (error) {
             console.error("투표 에러:", error);
+            // 에러 시 본인에게만 빨간 버블로 표시
             this.createBullet(`❌ ${error.message}`, CLIENT_IP, false);
         }
     },

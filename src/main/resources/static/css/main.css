@@ -148,5 +148,20 @@ body {
     }
 }
 
+/* [리사이저 바 스타일] */
+#h-resizer {
+    user-select: none;
+}
+
+#h-resizer:hover div {
+    background-color: #22c55e;
+}
+
+/* 리사이징 중 텍스트 선택 방지 */
+.resizing {
+    cursor: row-resize;
+    user-select: none;
+}
+
 /* 유틸리티 */
 .hidden { display: none !important; }

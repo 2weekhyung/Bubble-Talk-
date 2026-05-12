@@ -39,14 +39,18 @@ public class ChatService {
 
         // 2. [금칙어 필터링] Redis 캐시에서 목록을 가져옵니다. (고속 조회)
         List<String> forbiddenWords = forbiddenWordService.getForbiddenWords();
+        log.debug("적용 중인 금칙어 목록: {}", forbiddenWords);
 
         String filteredContent = content;
         for (String word : forbiddenWords) {
             if (filteredContent.contains(word)) {
+                log.info("금칙어 감지: '{}' -> 필터링 수행", word);
                 String replacement = "*".repeat(word.length());
                 filteredContent = filteredContent.replace(word, replacement);
             }
         }
+
+        log.debug("필터링 전: {}, 필터링 후: {}", content, filteredContent);
 
         // 3. [메시지 객체 생성 및 Redis 저장]
         ChatMessage chatMessage = ChatMessage.create(senderIp, filteredContent);

@@ -83,6 +83,34 @@ public class MenuService {
     }
 
     /**
+     * [강제 상태 변경] 투표 이벤트의 상태를 OPEN 또는 CLOSED로 변경합니다.
+     */
+    @Transactional
+    public void updateEventStatus(String status) {
+        redisTemplate.opsForValue().set(RedisKey.LUNCH_EVENT_STATUS.getPrefix(), status);
+        log.info("관리자에 의해 이벤트 상태가 강제로 변경되었습니다: {}", status);
+    }
+
+    /**
+     * [데이터 초기화] 오늘의 모든 랭킹 및 투표자 이력을 삭제합니다.
+     */
+    @Transactional
+    public void resetDailyData() {
+        String today = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
+        
+        // 1. 랭킹 데이터 삭제
+        redisTemplate.delete(RedisKey.LUNCH_RANKING.with(today));
+        
+        // 2. 투표자 이력 삭제 (패턴 검색 후 일괄 삭제)
+        Set<String> voterKeys = redisTemplate.keys(RedisKey.LUNCH_VOTER.with(today + ":*"));
+        if (voterKeys != null && !voterKeys.isEmpty()) {
+            redisTemplate.delete(voterKeys);
+        }
+
+        log.warn("관리자에 의해 오늘의 모든 투표 데이터가 초기화되었습니다.");
+    }
+
+    /**
      * [실시간 순위 조회]
      */
     public DailyMenuResDto getTopRankings() {
@@ -119,6 +147,22 @@ public class MenuService {
             log.error("랭킹 조회 중 오류 발생", e);
             return DailyMenuResDto.builder().menuList(Collections.emptyList()).build();
         }
+    }
+
+    /**
+     * [이력 조회] 과거 점심 투표 결과 이력을 조회합니다.
+     */
+    public List<LunchHistoryResDto> getLunchHistory() {
+        return lunchHistoryRepository.findAll().stream()
+                .map(history -> LunchHistoryResDto.builder()
+                        .id(history.getId())
+                        .targetDate(history.getTargetDate())
+                        .menuName(history.getMenuName())
+                        .voteCount(history.getVoteCount())
+                        .ranking(history.getRanking())
+                        .build())
+                .sorted((h1, h2) -> h2.getTargetDate().compareTo(h1.getTargetDate()))
+                .collect(Collectors.toList());
     }
 
     /**

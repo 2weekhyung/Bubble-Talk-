@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="ko"
+      xmlns:th="http://www.thymeleaf.org"
+      xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout"
+      layout:decorate="~{layout/default}">
+
+<th:block layout:fragment="content">
+    <div class="p-4 md:p-8 max-w-7xl mx-auto">
+        <!-- 상단 헤더 -->
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+            <div>
+                <h1 class="text-3xl font-black italic text-green-500"><i class="fa-solid fa-gauge-high mr-2"></i>ADMIN DASHBOARD</h1>
+                <p class="text-slate-500 text-sm">서비스 운영 및 실시간 모니터링 시스템</p>
+            </div>
+            <div class="flex gap-2">
+                <button onclick="ADMIN.refreshAllCache()" class="px-4 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs font-bold hover:bg-slate-700 transition-all">
+                    <i class="fa-solid fa-sync mr-1"></i> 전체 캐시 갱신
+                </button>
+            </div>
+        </div>
+
+        <!-- 대시보드 카드 그리드 -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            <!-- 실시간 접속자 -->
+            <div class="bg-slate-900/50 border border-slate-800 p-6 rounded-2xl shadow-xl">
+                <div class="flex items-center justify-between mb-4">
+                    <span class="text-xs font-bold text-slate-500 uppercase tracking-widest">Live Users</span>
+                    <div class="w-2 h-2 bg-green-500 rounded-full animate-ping"></div>
+                </div>
+                <div class="text-4xl font-black text-white mb-1" id="admin-user-count">0</div>
+                <p class="text-xs text-slate-500">현재 웹소켓 연결 중인 사용자</p>
+            </div>
+
+            <!-- 오늘 등록된 메뉴 -->
+            <div class="bg-slate-900/50 border border-slate-800 p-6 rounded-2xl shadow-xl">
+                <div class="flex items-center justify-between mb-4">
+                    <span class="text-xs font-bold text-slate-500 uppercase tracking-widest">Active Menus</span>
+                    <i class="fa-solid fa-utensils text-slate-700"></i>
+                </div>
+                <div class="text-4xl font-black text-white mb-1" id="admin-menu-count">0</div>
+                <p class="text-xs text-slate-500">전장에 투입된 총 메뉴 수</p>
+            </div>
+
+            <!-- 총 투표 수 -->
+            <div class="bg-slate-900/50 border border-slate-800 p-6 rounded-2xl shadow-xl">
+                <div class="flex items-center justify-between mb-4">
+                    <span class="text-xs font-bold text-slate-500 uppercase tracking-widest">Total Votes</span>
+                    <i class="fa-solid fa-fire text-slate-700"></i>
+                </div>
+                <div class="text-4xl font-black text-white mb-1" id="admin-total-votes">0</div>
+                <p class="text-xs text-slate-500">누적 화력 지원 횟수</p>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <!-- 금칙어 관리 섹션 -->
+            <section class="bg-slate-900/50 border border-slate-800 rounded-2xl p-6 shadow-xl">
+                <div class="flex items-center justify-between mb-6">
+                    <h3 class="text-xl font-bold italic"><i class="fa-solid fa-shield-halved text-orange-500 mr-2"></i>Forbidden Words</h3>
+                    <span class="text-[10px] px-2 py-1 bg-orange-500/10 text-orange-500 rounded border border-orange-500/20 font-bold uppercase">Security</span>
+                </div>
+
+                <!-- 금칙어 추가 폼 -->
+                <div class="flex gap-2 mb-6">
+                    <input type="text" id="new-forbidden-word" placeholder="새로운 금칙어 입력"
+                           class="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-orange-500">
+                    <button onclick="ADMIN.addForbiddenWord()" class="bg-orange-500 text-white font-black px-4 rounded-xl hover:bg-orange-400 transition-all text-sm">등록</button>
+                </div>
+
+                <!-- 금칙어 리스트 -->
+                <div class="max-h-[300px] overflow-y-auto custom-scroll pr-2 space-y-2" id="forbidden-word-list">
+                    <!-- 리스트가 동적으로 렌더링됨 -->
+                </div>
+            </section>
+
+            <!-- 이벤트 제어 섹션 -->
+            <section class="bg-slate-900/50 border border-slate-800 rounded-2xl p-6 shadow-xl">
+                <div class="flex items-center justify-between mb-6">
+                    <h3 class="text-xl font-bold italic"><i class="fa-solid fa-bolt text-yellow-500 mr-2"></i>Event Control</h3>
+                    <span class="text-[10px] px-2 py-1 bg-yellow-500/10 text-yellow-500 rounded border border-yellow-500/20 font-bold uppercase">System</span>
+                </div>
+
+                <div class="space-y-6">
+                    <div class="flex items-center justify-between p-4 bg-slate-800/50 rounded-xl border border-slate-700">
+                        <div>
+                            <h4 class="font-bold text-sm mb-1">점심 전쟁 활성화 상태</h4>
+                            <p class="text-xs text-slate-500">강제로 OPEN/CLOSED 상태를 변경합니다.</p>
+                        </div>
+                        <div class="flex gap-2">
+                            <button id="btn-status-open" onclick="ADMIN.toggleEventStatus('OPEN')" class="px-3 py-1.5 rounded-lg text-xs font-bold border border-slate-600 hover:bg-green-500 hover:border-green-500 hover:text-slate-900 transition-all">OPEN</button>
+                            <button id="btn-status-closed" onclick="ADMIN.toggleEventStatus('CLOSED')" class="px-3 py-1.5 rounded-lg text-xs font-bold border border-slate-600 hover:bg-red-500 hover:border-red-500 hover:text-slate-900 transition-all">CLOSED</button>
+                        </div>
+                    </div>
+
+                    <div class="p-4 bg-slate-800/50 rounded-xl border border-slate-700">
+                        <h4 class="font-bold text-sm mb-2 text-red-400"><i class="fa-solid fa-triangle-exclamation mr-1"></i>데이터 위험 구역</h4>
+                        <p class="text-[11px] text-slate-500 mb-4">정산 전 데이터 초기화는 복구가 불가능합니다. 신중히 사용하세요.</p>
+                        <button onclick="ADMIN.resetDailyData()" class="w-full py-2 bg-red-500/10 border border-red-500/30 text-red-500 text-xs font-bold rounded-lg hover:bg-red-500 hover:text-white transition-all">오늘의 랭킹 및 투표 데이터 전체 삭제</button>
+                    </div>
+                </div>
+            </section>
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-8">
+            <!-- 점심 투표 이력 섹션 -->
+            <section class="bg-slate-900/50 border border-slate-800 rounded-2xl p-6 shadow-xl">
+                <div class="flex items-center justify-between mb-6">
+                    <h3 class="text-xl font-bold italic"><i class="fa-solid fa-history text-blue-500 mr-2"></i>Lunch History</h3>
+                    <span class="text-[10px] px-2 py-1 bg-blue-500/10 text-blue-500 rounded border border-blue-500/20 font-bold uppercase">Archived</span>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm">
+                        <thead class="text-slate-500 uppercase text-[10px] font-bold border-b border-slate-800">
+                            <tr>
+                                <th class="pb-3 px-2">날짜</th>
+                                <th class="pb-3 px-2">우승 메뉴</th>
+                                <th class="pb-3 px-2 text-right">득표수</th>
+                            </tr>
+                        </thead>
+                        <tbody id="lunch-history-list" class="divide-y divide-slate-800/50">
+                            <!-- 이력이 동적으로 렌더링됨 -->
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- 실시간 채팅 모니터 섹션 -->
+            <section class="bg-slate-900/50 border border-slate-800 rounded-2xl p-6 shadow-xl">
+                <div class="flex items-center justify-between mb-6">
+                    <h3 class="text-xl font-bold italic"><i class="fa-solid fa-comments text-purple-500 mr-2"></i>Live Chat Monitor</h3>
+                    <span class="text-[10px] px-2 py-1 bg-purple-500/10 text-purple-500 rounded border border-purple-500/20 font-bold uppercase">Real-time</span>
+                </div>
+
+                <div id="admin-chat-list" class="h-[300px] overflow-y-auto custom-scroll pr-2 space-y-3 text-xs">
+                    <!-- 채팅 메시지가 실시간으로 추가됨 -->
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <!-- 전용 스크립트 -->
+    <script src="/js/admin/admin.js"></script>
+</th:block>
+</html>

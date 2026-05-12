@@ -74,7 +74,15 @@ public class ForbiddenWordService {
 
         if (cachedWords != null && !cachedWords.isEmpty()) {
             return cachedWords.stream()
-                    .map(Object::toString)
+                    .map(obj -> {
+                        String s = obj.toString();
+                        // JSON 직렬화로 인해 앞뒤에 따옴표가 붙어있을 경우 제거
+                        if (s.startsWith("\"") && s.endsWith("\"")) {
+                            s = s.substring(1, s.length() - 1);
+                        }
+                        return s.trim();
+                    })
+                    .filter(s -> !s.isEmpty())
                     .collect(Collectors.toList());
         }
 
