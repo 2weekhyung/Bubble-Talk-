@@ -51,7 +51,19 @@ public enum RedisKey {
      * 점심 메뉴 타임 어택 활성화 상태 키 (Value)
      * 구조: lunch:event:status
      */
-    LUNCH_EVENT_STATUS("lunch:event:status");
+    LUNCH_EVENT_STATUS("lunch:event:status"),
+
+    /**
+     * 점심 투표 운영 시작 시간 (Value)
+     * 구조: lunch:event:start-time
+     */
+    LUNCH_START_TIME("lunch:event:start-time"),
+
+    /**
+     * 점심 투표 운영 종료 시간 (Value)
+     * 구조: lunch:event:end-time
+     */
+    LUNCH_END_TIME("lunch:event:end-time");
 
     private final String prefix;
 

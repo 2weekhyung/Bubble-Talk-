@@ -33,6 +33,43 @@
     <!-- 메인 전장 영역 -->
     <main class="flex-1 overflow-y-auto custom-scroll bg-[#0f172a] p-4 md:p-8 relative">
 
+        <!-- 상단 유틸리티 섹션 (타이머, 어제 우승자, 날씨) -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+            <!-- [1] 실시간 타임어택 타이머 -->
+            <div class="bg-slate-900/50 border border-slate-800 p-4 rounded-2xl flex items-center gap-4 group hover:border-green-500/50 transition-all">
+                <div class="w-12 h-12 bg-green-500/10 rounded-full flex items-center justify-center text-green-500 group-hover:scale-110 transition-transform">
+                    <i class="fa-solid fa-clock-rotate-left text-xl"></i>
+                </div>
+                <div>
+                    <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1">War Time Remaining</span>
+                    <div id="war-timer" class="text-2xl font-black font-mono text-white italic">--:--:--</div>
+                </div>
+            </div>
+
+            <!-- [2] 어제의 승리자 -->
+            <div class="bg-slate-900/50 border border-slate-800 p-4 rounded-2xl flex items-center gap-4 group hover:border-yellow-500/50 transition-all">
+                <div class="w-12 h-12 bg-yellow-500/10 rounded-full flex items-center justify-center text-yellow-500 group-hover:scale-110 transition-transform">
+                    <i class="fa-solid fa-crown text-xl"></i>
+                </div>
+                <div>
+                    <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1">Yesterday's Victory</span>
+                    <div id="yesterday-winner" class="text-sm md:text-base font-black text-white truncate max-w-[150px]">로딩 중...</div>
+                </div>
+            </div>
+
+            <!-- [4] 사이버 메뉴 추천 (날씨 기반) - 보류 처리
+            <div class="bg-slate-900/50 border border-slate-800 p-4 rounded-2xl flex items-center gap-4 group hover:border-blue-500/50 transition-all">
+                <div id="weather-icon" class="w-12 h-12 bg-blue-500/10 rounded-full flex items-center justify-center text-blue-400 group-hover:scale-110 transition-transform">
+                    <i class="fa-solid fa-cloud-sun text-xl"></i>
+                </div>
+                <div>
+                    <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1">System Recommendation</span>
+                    <div id="menu-recommendation" class="text-xs md:text-sm font-bold text-slate-300 italic">데이터 분석 중...</div>
+                </div>
+            </div>
+            -->
+        </div>
+
         <!-- [상태 1] 대기 화면 (11시 이전) -->
         <div id="state-locked" class="hidden flex flex-col items-center justify-center py-20 text-center">
             <div class="w-24 h-24 md:w-32 md:h-32 bg-slate-800 rounded-full flex items-center justify-center mb-6 animate-pulse border-4 border-slate-700">
@@ -55,12 +92,12 @@
                     </div>
                 </div>
 
-                <!-- 메뉴 직접 추가 폼 -->
-                <div class="mt-4 flex gap-2">
+                <!-- 메뉴 직접 추가 폼 (엔터 키 지원을 위해 form 태그 적용) -->
+                <form id="add-menu-form" class="mt-4 flex gap-2">
                     <input type="text" id="add-menu-input" placeholder="나만의 점심 메뉴 투입!"
                            class="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-sm md:text-base focus:outline-none focus:border-green-500">
-                    <button onclick="MAINJS.addNewMenu()" class="bg-green-500 text-slate-900 font-black px-6 md:px-10 rounded-xl hover:bg-green-400 active:scale-95 transition-all">추가</button>
-                </div>
+                    <button type="submit" class="bg-green-500 text-slate-900 font-black px-6 md:px-10 rounded-xl hover:bg-green-400 active:scale-95 transition-all">추가</button>
+                </form>
             </div>
 
             <!-- 반응형 그리드: 모바일 1열 / 태블릿 2열 / 데스크탑 3열 -->

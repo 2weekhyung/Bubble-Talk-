@@ -6,6 +6,8 @@ const MAINJS = {
     battleItems: [],
     state: "VOTING",
     stompClient: null,
+    endTime: "14:00:00",
+    prevTopId: null,
 
     /**
      * 페이지 로드 시 초기화
@@ -14,9 +16,69 @@ const MAINJS = {
         console.log("MAINJS 초기화 시작...");
         this.connectWebSocket();
         this.fetchInitialData();
+        this.fetchExtraData(); // 타이머, 어제 우승자 등 추가 데이터
         this.bindEvents();
         this.startTimers();
         this.initResizer();
+        // this.initRecommendation(); // [보류] 추천 시스템 초기화
+    },
+
+    /**
+     * 어제 우승자 및 종료 시간 데이터 로드
+     */
+    fetchExtraData: async function() {
+        try {
+            const response = await COMMON_AJAX.get('/api/menu/init-data');
+            if (response.code === "0000") {
+                const data = response.result;
+                this.endTime = data.endTime + ":00";
+                
+                // 어제 우승자 렌더링
+                const winnerEl = document.getElementById('yesterday-winner');
+                if (winnerEl) {
+                    winnerEl.innerText = `${data.yesterdayWinner} (${data.yesterdayVotes}표)`;
+                }
+            }
+        } catch (e) {
+            console.error("추가 데이터 로딩 실패", e);
+        }
+    },
+
+    /**
+     * 상황별 메뉴 추천 시스템 (Weather/Time Mock)
+     */
+    initRecommendation: function() {
+        const recommendations = {
+            clear: ["돈가스", "제육볶음", "냉면", "비빔밥"],
+            rain: ["짬뽕", "부침개", "칼국수", "수제비"],
+            cloud: ["순대국", "뼈해장국", "쌀국수", "부대찌개"],
+            hot: ["삼계탕", "모밀", "물회", "치킨"],
+            cold: ["우동", "라면", "전골", "곰탕"]
+        };
+
+        const weatherMock = ["clear", "rain", "cloud", "hot", "cold"];
+        const randomWeather = weatherMock[Math.floor(Math.random() * weatherMock.length)];
+        const iconMap = {
+            clear: "fa-sun",
+            rain: "fa-cloud-showers-heavy",
+            cloud: "fa-cloud",
+            hot: "fa-fire-orange",
+            cold: "fa-snowflake"
+        };
+
+        const weatherIconEl = document.getElementById('weather-icon');
+        const recommendEl = document.getElementById('menu-recommendation');
+        
+        if (weatherIconEl) {
+            weatherIconEl.innerHTML = `<i class="fa-solid ${iconMap[randomWeather]} text-xl"></i>`;
+        }
+
+        if (recommendEl) {
+            const list = recommendations[randomWeather];
+            const menu = list[Math.floor(Math.random() * list.length)];
+            const weatherName = {clear:"맑은 날", rain:"비 오는 날", cloud:"흐린 날", hot:"무더운 날", cold:"추운 날"}[randomWeather];
+            recommendEl.innerText = `${weatherName}엔 [${menu}] 어떠세요?`;
+        }
     },
 
     /**
@@ -211,6 +273,15 @@ const MAINJS = {
         const totalVotes = this.battleItems.reduce((acc, cur) => acc + (cur.finalScore || 0), 0) || 1;
         const sorted = [...this.battleItems].sort((a, b) => b.finalScore - a.finalScore);
 
+        // [3] 순위 역전 감지 (1위 변경 시)
+        if (sorted.length > 0 && sorted[0].finalScore > 0) {
+            const currentTop = sorted[0];
+            if (this.prevTopId && this.prevTopId !== currentTop.id) {
+                this.createBullet(`🔥 역전! [${currentTop.menuName}]이 1위로 올라섰습니다!`, 'SYSTEM', true);
+            }
+            this.prevTopId = currentTop.id;
+        }
+
         sorted.forEach((item, idx) => {
             const pct = Math.round(((item.finalScore || 0) / totalVotes) * 100);
             const card = document.createElement('div');
@@ -278,6 +349,7 @@ const MAINJS = {
      * 이벤트 바인딩
      */
     bindEvents: function() {
+        // [1] 채팅 폼
         const msgForm = document.getElementById('msg-form');
         if (msgForm) {
             msgForm.addEventListener('submit', (e) => {
@@ -290,16 +362,50 @@ const MAINJS = {
                 }
             });
         }
+
+        // [2] 메뉴 추가 폼 (엔터 키 지원)
+        const addMenuForm = document.getElementById('add-menu-form');
+        if (addMenuForm) {
+            addMenuForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                this.addNewMenu();
+            });
+        }
     },
 
     /**
-     * 타이머 시작
+     * 타이머 시작 (라이브 시계 + 타임어택 카운트다운)
      */
     startTimers: function() {
         setInterval(() => {
             const now = new Date();
+            
+            // 1. 라이브 시계 (푸터 등)
             const timerEl = document.getElementById('live-timer');
             if (timerEl) timerEl.innerText = now.toLocaleTimeString('ko-KR', { hour12: false });
+
+            // 2. 전쟁 종료 카운트다운
+            const warTimerEl = document.getElementById('war-timer');
+            if (warTimerEl) {
+                const [h, m, s] = this.endTime.split(':');
+                const target = new Date();
+                target.setHours(h, m, s, 0);
+
+                let diff = target - now;
+                if (diff < 0) {
+                    warTimerEl.innerText = "00:00:00";
+                    warTimerEl.classList.add('text-red-500', 'animate-pulse');
+                } else {
+                    const hours = String(Math.floor(diff / (1000 * 60 * 60))).padStart(2, '0');
+                    const mins = String(Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))).padStart(2, '0');
+                    const secs = String(Math.floor((diff % (1000 * 60)) / 1000)).padStart(2, '0');
+                    warTimerEl.innerText = `${hours}:${mins}:${secs}`;
+                    
+                    // 1시간 미만일 때 색상 변경으로 긴박감 조성
+                    if (diff < 3600000) warTimerEl.classList.add('text-orange-500');
+                    else warTimerEl.classList.remove('text-orange-500', 'text-red-500');
+                }
+            }
         }, 1000);
     },
 

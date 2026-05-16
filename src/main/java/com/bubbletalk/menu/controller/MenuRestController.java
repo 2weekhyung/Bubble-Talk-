@@ -55,6 +55,23 @@ public class MenuRestController {
     }
 
     /**
+     * [GET] /api/menu/init-data
+     * 메인 화면 초기화에 필요한 통합 데이터를 가져옵니다. (어제 우승자, 운영 시간 등)
+     */
+    @Operation(summary = "메인 초기 데이터 조회", description = "어제 우승자 정보와 운영 종료 시간을 가져옵니다.")
+    @GetMapping("/init-data")
+    public ResponseEntity<BaseResDto> getInitData() {
+        Map<String, String> times = menuService.getEventTimes();
+        com.bubbletalk.menu.dto.res.LunchHistoryResDto winner = menuService.getYesterdayWinner();
+        
+        return ResponseEntity.ok(BaseResDto.ok(Map.of(
+            "endTime", times.get("endTime"),
+            "yesterdayWinner", winner != null ? winner.getMenuName() : "없음",
+            "yesterdayVotes", winner != null ? winner.getVoteCount().toString() : "0"
+        )));
+    }
+
+    /**
      * [POST] /api/menu/add
      * 새로운 점심 메뉴를 전장에 투입하거나, 중복 시 자동 투표합니다.
      */

@@ -4,6 +4,7 @@ import com.bubbletalk.base.dto.BaseResDto;
 import com.bubbletalk.global.constant.RedisKey;
 import com.bubbletalk.global.exception.BusinessException;
 import com.bubbletalk.menu.dto.res.DailyMenuResDto;
+import com.bubbletalk.menu.dto.res.LunchHistoryResDto;
 import com.bubbletalk.menu.dto.res.MenuListResDto;
 import com.bubbletalk.menu.entity.DailyMenu;
 import com.bubbletalk.menu.entity.LunchHistory;
@@ -92,6 +93,29 @@ public class MenuService {
     }
 
     /**
+     * [운영 시간 조회] Redis에서 현재 설정된 운영 시간을 가져옵니다.
+     */
+    public java.util.Map<String, String> getEventTimes() {
+        String startTime = (String) redisTemplate.opsForValue().get(RedisKey.LUNCH_START_TIME.getPrefix());
+        String endTime = (String) redisTemplate.opsForValue().get(RedisKey.LUNCH_END_TIME.getPrefix());
+        
+        return java.util.Map.of(
+            "startTime", startTime != null ? startTime : "09:00",
+            "endTime", endTime != null ? endTime : "14:00"
+        );
+    }
+
+    /**
+     * [운영 시간 설정] Redis에 운영 시간을 저장합니다.
+     */
+    @Transactional
+    public void updateEventTimes(String startTime, String endTime) {
+        redisTemplate.opsForValue().set(RedisKey.LUNCH_START_TIME.getPrefix(), startTime);
+        redisTemplate.opsForValue().set(RedisKey.LUNCH_END_TIME.getPrefix(), endTime);
+        log.info("관리자에 의해 운영 시간이 변경되었습니다: {} ~ {}", startTime, endTime);
+    }
+
+    /**
      * [데이터 초기화] 오늘의 모든 랭킹 및 투표자 이력을 삭제합니다.
      */
     @Transactional
@@ -164,11 +188,28 @@ public class MenuService {
                 .sorted((h1, h2) -> h2.getTargetDate().compareTo(h1.getTargetDate()))
                 .collect(Collectors.toList());
     }
+/**
+ * [어제의 우승자 조회] 가장 최근 종료된 투표의 1위 메뉴를 가져옵니다.
+ */
+public LunchHistoryResDto getYesterdayWinner() {
+    // 가장 최근 날짜의 1위 데이터를 조회
+    return lunchHistoryRepository.findAll().stream()
+            .filter(h -> h.getRanking() == 1)
+            .sorted((h1, h2) -> h2.getTargetDate().compareTo(h1.getTargetDate()))
+            .map(history -> LunchHistoryResDto.builder()
+                    .targetDate(history.getTargetDate())
+                    .menuName(history.getMenuName())
+                    .voteCount(history.getVoteCount())
+                    .build())
+            .findFirst()
+            .orElse(null);
+}
 
-    /**
-     * [최종 정산] Redis의 임시 데이터를 DB(LunchHistory)로 옮깁니다.
-     * 매일 정해진 시간(예: 12시)에 스케줄러에 의해 실행됩니다.
-     */
+/**
+ * [최종 정산] Redis의 임시 데이터를 DB(LunchHistory)로 옮깁니다.
+ *
+   매일 정해진 시간(예: 12시)에 스케줄러에 의해 실행됩니다.
+ */
     @Transactional
     public void syncRedisToDb() {
         String todayStr = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));

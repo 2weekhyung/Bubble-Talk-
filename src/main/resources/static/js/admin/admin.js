@@ -7,9 +7,69 @@ const ADMIN = {
         this.fetchForbiddenWords();
         this.fetchStats();
         this.fetchEventStatus();
+        this.fetchLunchTimes(); // 추가
         this.fetchHistory();
         this.connectStatsSocket();
         this.connectChatSocket();
+    },
+
+    /**
+     * 운영 시간 설정 조회
+     */
+    fetchLunchTimes: async function() {
+        try {
+            const response = await COMMON_AJAX.get('/api/admin/lunch/times');
+            if (response.code === "0000") {
+                document.getElementById('lunch-start-time').value = response.result.startTime;
+                document.getElementById('lunch-end-time').value = response.result.endTime;
+            }
+        } catch (e) {
+            console.error("운영 시간 로딩 실패", e);
+        }
+    },
+
+    /**
+     * 운영 시간 설정 저장
+     */
+    updateLunchTimes: async function() {
+        const startTime = document.getElementById('lunch-start-time').value;
+        const endTime = document.getElementById('lunch-end-time').value;
+
+        if (!startTime || !endTime) {
+            alert('시간을 모두 입력해주세요.');
+            return;
+        }
+
+        try {
+            const response = await COMMON_AJAX.post('/api/admin/lunch/times', {
+                startTime: startTime,
+                endTime: endTime
+            });
+            if (response.code === "0000") {
+                alert('운영 시간이 성공적으로 저장되었습니다.');
+            }
+        } catch (e) {
+            alert('저장 실패: ' + e.message);
+        }
+    },
+
+    /**
+     * 시스템 전역 공지 발송
+     */
+    sendAnnouncement: async function() {
+        const input = document.getElementById('admin-announcement-msg');
+        const message = input.value.trim();
+        if (!message) return;
+
+        try {
+            const response = await COMMON_AJAX.post('/api/admin/announcement', { message: message });
+            if (response.code === "0000") {
+                input.value = '';
+                alert('공지가 전송되었습니다.');
+            }
+        } catch (e) {
+            alert('전송 실패: ' + e.message);
+        }
     },
 
     /**

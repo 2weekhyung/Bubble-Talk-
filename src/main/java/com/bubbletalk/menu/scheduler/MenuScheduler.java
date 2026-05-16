@@ -28,13 +28,22 @@ public class MenuScheduler {
     @PostConstruct
     public void init() {
         LocalTime now = LocalTime.now();
-        if (now.isAfter(LocalTime.of(9, 0)) && now.isBefore(LocalTime.of(14, 0))) {
+        
+        // Redis에서 설정된 운영 시간 가져오기 (없으면 기본값 09:00, 14:00)
+        String startStr = (String) redisTemplate.opsForValue().get(RedisKey.LUNCH_START_TIME.getPrefix());
+        String endStr = (String) redisTemplate.opsForValue().get(RedisKey.LUNCH_END_TIME.getPrefix());
+        
+        LocalTime startTime = startStr != null ? LocalTime.parse(startStr) : LocalTime.of(9, 0);
+        LocalTime endTime = endStr != null ? LocalTime.parse(endStr) : LocalTime.of(14, 0);
+
+        // 현재 시간이 설정된 범위 내인지 체크
+        if (!now.isBefore(startTime) && now.isBefore(endTime)) {
             redisTemplate.opsForValue().set(RedisKey.LUNCH_EVENT_STATUS.getPrefix(), "OPEN");
-            log.info("[초기화] 현재 시간({})은 투표 시간입니다. 상태를 OPEN으로 설정합니다.", now);
+            log.info("[초기화] 현재 시간({})은 설정된 투표 시간({} ~ {})입니다. 상태를 OPEN으로 설정합니다.", now, startTime, endTime);
         } else {
             // 그 외 시간대에는 CLOSED로 설정하되, 이미 데이터가 있을 수 있으므로 상태만 변경
             redisTemplate.opsForValue().set(RedisKey.LUNCH_EVENT_STATUS.getPrefix(), "CLOSED");
-            log.info("[초기화] 현재 시간({})은 투표 시간이 아닙니다. 상태를 CLOSED로 설정합니다.", now);
+            log.info("[초기화] 현재 시간({})은 설정된 투표 시간({} ~ {})이 아닙니다. 상태를 CLOSED로 설정합니다.", now, startTime, endTime);
         }
     }
 
