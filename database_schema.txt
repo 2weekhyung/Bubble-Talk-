@@ -1,0 +1,46 @@
+[버블톡(BubbleTalk) 최신화된 DB 스크립트 - 2026-05-03]
+작성일: 2026-05-03
+대상 DB: MySQL / MariaDB
+
+-----------------------------------------------------------
+1. 메뉴 마스터 테이블 (daily_menus)
+-- 실시간 점수는 Redis에서 관리하므로 DB 컬럼은 이름과 생성일만 유지
+-----------------------------------------------------------
+CREATE TABLE daily_menus (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    menu_name VARCHAR(255) NOT NULL UNIQUE COMMENT '메뉴 명칭',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '최초 등록 일시'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+
+-----------------------------------------------------------
+2. 점심 메뉴 최종 이력 테이블 (TB_LUNCH_HISTORY)
+-- 매일 12시 정각, Redis(ZSet)의 스냅샷을 영구 저장
+-----------------------------------------------------------
+CREATE TABLE TB_LUNCH_HISTORY (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    target_date DATE NOT NULL COMMENT '투표 날짜',
+    menu_name VARCHAR(255) NOT NULL COMMENT '메뉴 명칭',
+    vote_count BIGINT NOT NULL COMMENT '최종 득표수',
+    ranking INT NOT NULL COMMENT '최종 순위',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+
+-----------------------------------------------------------
+3. 금칙어 관리 테이블 (forbidden_words)
+-----------------------------------------------------------
+CREATE TABLE forbidden_words (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    word VARCHAR(255) NOT NULL UNIQUE COMMENT '금칙어 단어',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '등록 일시'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+
+-----------------------------------------------------------
+[참고] 성능 최적화를 위한 인덱스(Index) 설정
+-----------------------------------------------------------
+-- 날짜별 이력 조회 속도 향상
+CREATE INDEX idx_lunch_history_date ON TB_LUNCH_HISTORY(target_date);
+-- 메뉴명 기반 고속 검색
+CREATE INDEX idx_daily_menu_name ON daily_menus(menu_name);

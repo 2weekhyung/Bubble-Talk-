@@ -1,5 +1,7 @@
 package com.bubbletalk.config;
 
+import com.bubbletalk.guest.GuestIdSupport;
+import jakarta.servlet.http.Cookie;
 import org.springframework.http.server.ServerHttpRequest;
 import org.springframework.http.server.ServerHttpResponse;
 import org.springframework.http.server.ServletServerHttpRequest;
@@ -21,6 +23,18 @@ public class IpHandshakeInterceptor implements HandshakeInterceptor {
             ServletServerHttpRequest servletRequest = (ServletServerHttpRequest) request;
             String ip = servletRequest.getServletRequest().getRemoteAddr();
             attributes.put("client-ip", ip);
+
+            Cookie[] cookies = servletRequest.getServletRequest().getCookies();
+            if (cookies != null) {
+                for (Cookie cookie : cookies) {
+                    if (GuestIdSupport.COOKIE_NAME.equals(cookie.getName())
+                            && cookie.getValue() != null
+                            && !cookie.getValue().isBlank()) {
+                        attributes.put("guest-id", cookie.getValue());
+                        break;
+                    }
+                }
+            }
         }
         return true;
     }

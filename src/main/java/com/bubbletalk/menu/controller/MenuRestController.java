@@ -1,6 +1,7 @@
 package com.bubbletalk.menu.controller;
 
 import com.bubbletalk.base.dto.BaseResDto;
+import com.bubbletalk.guest.GuestIdSupport;
 import com.bubbletalk.global.constant.RedisKey;
 import com.bubbletalk.menu.dto.req.MenuAddReqDto;
 import com.bubbletalk.menu.dto.req.MenuVoteReqDto;
@@ -29,6 +30,7 @@ public class MenuRestController {
     private final MenuService menuService;
     private final MenuSocketController socketController;
     private final RedisTemplate<String, Object> redisTemplate;
+    private final GuestIdSupport guestIdSupport;
 
     /**
      * [GET] /api/menu/status
@@ -77,11 +79,13 @@ public class MenuRestController {
      */
     @Operation(summary = "메뉴 추가 및 투표", description = "새로운 메뉴를 등록하거나, 이미 존재하는 경우 해당 메뉴에 자동으로 투표합니다.")
     @PostMapping("/add")
-    public ResponseEntity<BaseResDto> addMenu(@RequestBody MenuAddReqDto reqDto, HttpServletRequest request) {
-        String ip = request.getRemoteAddr();
+    public ResponseEntity<BaseResDto> addMenu(@RequestBody MenuAddReqDto reqDto,
+                                              @RequestHeader(value = "X-Client-Id", required = false) String clientId,
+                                              HttpServletRequest request) {
+        String requesterId = resolveVoterId(clientId, request);
         try {
             // 1. 메뉴 저장 및 투표 통합 처리
-            menuService.saveAndVote(reqDto.getMenuName(), ip);
+            menuService.saveMenu(reqDto.getMenuName(), requesterId);
             
             // 2. 실시간 전파 (목록만 갱신)
             socketController.broadcastMenuUpdate();
@@ -135,10 +139,12 @@ public class MenuRestController {
      */
     @Operation(summary = "메뉴 투표 (화력 지원)", description = "특정 메뉴 ID에 대해 1표를 추가합니다. 중복 투표 시 에러가 발생합니다.")
     @PostMapping("/vote")
-    public ResponseEntity<BaseResDto> vote(@RequestBody MenuVoteReqDto reqDto, HttpServletRequest request) {
-        String ip = request.getRemoteAddr();
+    public ResponseEntity<BaseResDto> vote(@RequestBody MenuVoteReqDto reqDto,
+                                           @RequestHeader(value = "X-Client-Id", required = false) String clientId,
+                                           HttpServletRequest request) {
+        String voterId = resolveVoterId(clientId, request);
         try {
-            menuService.increaseVote(reqDto.getMenuId(), ip);
+            menuService.increaseVote(reqDto.getMenuId(), voterId);
             socketController.broadcastMenuUpdate();
             return ResponseEntity.ok(BaseResDto.ok());
         } catch (com.bubbletalk.global.exception.BusinessException e) {
@@ -146,5 +152,18 @@ public class MenuRestController {
         } catch (Exception e) {
             return ResponseEntity.internalServerError().body(new BaseResDto("5000", "처리 중 오류가 발생했습니다."));
         }
+    }
+
+    private String resolveVoterId(String clientId, HttpServletRequest request) {
+        return guestIdSupport.resolve(request)
+                .map(guestId -> "guest:" + guestId)
+                .orElseGet(() -> resolveLegacyVoterId(clientId, request));
+    }
+
+    private String resolveLegacyVoterId(String clientId, HttpServletRequest request) {
+        if (clientId != null && !clientId.isBlank()) {
+            return "client:" + clientId;
+        }
+        return "ip:" + request.getRemoteAddr();
     }
 }

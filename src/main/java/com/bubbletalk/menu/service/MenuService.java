@@ -23,6 +23,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 /**
@@ -35,6 +36,9 @@ import java.util.stream.Collectors;
 @Transactional(readOnly = true)
 public class MenuService {
 
+    private static final int MENU_NAME_MAX_LENGTH = 20;
+    private static final int MENU_ADD_LIMIT_SECONDS = 30;
+
     private final MenuRepository menuRepository;
     private final LunchHistoryRepository lunchHistoryRepository;
     private final RedisTemplate<String, Object> redisTemplate;
@@ -43,13 +47,41 @@ public class MenuService {
      * 새로운 메뉴를 생성하거나, 이미 있으면 자동으로 투표합니다.
      */
     @Transactional
+    public void saveMenu(String menuName) {
+        String normalizedMenuName = normalizeMenuName(menuName);
+        DailyMenu menu = menuRepository.findByMenuName(normalizedMenuName).orElse(null);
+        String today = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
+        String rankingKey = RedisKey.LUNCH_RANKING.with(today);
+
+        if (menu == null) {
+            menu = DailyMenu.builder()
+                    .menuName(normalizedMenuName)
+                    .build();
+            menu = menuRepository.save(menu);
+            log.info("?덈줈??硫붾돱 ?깅줉: {}", menuName);
+        }
+
+        if (redisTemplate.opsForZSet().score(rankingKey, menu.getId().toString()) == null) {
+            redisTemplate.opsForZSet().add(rankingKey, menu.getId().toString(), 0);
+        }
+    }
+
+    @Transactional
+    public void saveMenu(String menuName, String requesterId) {
+        String normalizedMenuName = normalizeMenuName(menuName);
+        validateMenuAddRateLimit(requesterId);
+        saveMenu(normalizedMenuName);
+    }
+
+    @Transactional
     public void saveAndVote(String menuName, String voterIp) {
-        DailyMenu menu = menuRepository.findByMenuName(menuName).orElse(null);
+        String normalizedMenuName = normalizeMenuName(menuName);
+        DailyMenu menu = menuRepository.findByMenuName(normalizedMenuName).orElse(null);
 
         if (menu == null) {
             // [신규 등록]
             menu = DailyMenu.builder()
-                    .menuName(menuName)
+                    .menuName(normalizedMenuName)
                     .build();
             menu = menuRepository.save(menu);
             
@@ -72,15 +104,65 @@ public class MenuService {
         String rankingKey = RedisKey.LUNCH_RANKING.with(today);
         String voterKey = RedisKey.LUNCH_VOTER.with(today + ":" + menuId);
 
-        // 1. [중복 방지]
-        Boolean alreadyVoted = redisTemplate.opsForSet().isMember(voterKey, voterIp);
-        if (Boolean.TRUE.equals(alreadyVoted)) {
-            throw new BusinessException("이미 이 메뉴에 화력을 지원하셨습니다!");
+        Long addedCount = redisTemplate.opsForSet().add(voterKey, voterIp);
+        if (addedCount == null) {
+            log.error("vote duplicate check failed: voterKey={}, voterId={}", voterKey, voterIp);
+            throw new BusinessException("투표 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
         }
 
-        // 2. [Redis ZSET] 점수 상승
+        if (addedCount == 0) {
+            throw new BusinessException("이미 이 메뉴에 투표했습니다.");
+        }
+
         redisTemplate.opsForZSet().incrementScore(rankingKey, menuId.toString(), 1);
-        redisTemplate.opsForSet().add(voterKey, voterIp);
+    }
+
+    private void validateMenuAddRateLimit(String requesterId) {
+        if (requesterId == null || requesterId.isBlank()) {
+            throw new BusinessException("메뉴 추가 요청자를 확인할 수 없습니다.");
+        }
+
+        String key = RedisKey.MENU_ADD_RATELIMIT.with(requesterId);
+        Boolean allowed = redisTemplate.opsForValue()
+                .setIfAbsent(key, "1", MENU_ADD_LIMIT_SECONDS, TimeUnit.SECONDS);
+
+        if (allowed == null) {
+            log.error("menu add rate limit check failed: requesterId={}", requesterId);
+            throw new BusinessException("메뉴 추가 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
+        }
+
+        if (!allowed) {
+            throw new BusinessException("메뉴는 30초에 한 번만 추가할 수 있습니다.");
+        }
+    }
+
+    private String normalizeMenuName(String menuName) {
+        if (menuName == null) {
+            throw new BusinessException("메뉴명을 입력해주세요.");
+        }
+
+        String normalized = menuName.trim();
+        if (normalized.isBlank()) {
+            throw new BusinessException("메뉴명을 입력해주세요.");
+        }
+
+        if (normalized.length() > MENU_NAME_MAX_LENGTH) {
+            throw new BusinessException("메뉴명은 20자 이하로 입력해주세요.");
+        }
+
+        if (containsUnsafeHtml(normalized)) {
+            throw new BusinessException("메뉴명에 사용할 수 없는 문자가 포함되어 있습니다.");
+        }
+
+        return normalized;
+    }
+
+    private boolean containsUnsafeHtml(String value) {
+        return value.contains("<")
+                || value.contains(">")
+                || value.contains("&lt;")
+                || value.contains("&gt;")
+                || value.toLowerCase().contains("script");
     }
 
     /**

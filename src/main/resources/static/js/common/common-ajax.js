@@ -9,6 +9,10 @@ const COMMON_AJAX = {
      * @param {object} options - fetch 옵션 (method, headers, body 등)
      */
     request: async function(url, options = {}) {
+        const method = (options.method || 'GET').toUpperCase();
+        const csrfToken = document.querySelector('meta[name="_csrf"]')?.getAttribute('content');
+        const csrfHeader = document.querySelector('meta[name="_csrf_header"]')?.getAttribute('content');
+
         const defaultOptions = {
             headers: {
                 'Content-Type': 'application/json',
@@ -24,6 +28,10 @@ const COMMON_AJAX = {
                 ...options.headers,
             },
         };
+
+        if (csrfToken && csrfHeader && !['GET', 'HEAD', 'OPTIONS', 'TRACE'].includes(method)) {
+            mergedOptions.headers[csrfHeader] = csrfToken;
+        }
 
         try {
             const response = await fetch(url, mergedOptions);

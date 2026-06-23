@@ -22,6 +22,12 @@ public class ChatMessage {
      */
     private String senderIp;
 
+    private String senderGuestId;
+
+    private String senderClientId;
+
+    private String roomCode;
+
     /**
      * 메시지 내용
      */
@@ -42,8 +48,23 @@ public class ChatMessage {
      * 기본 5초의 TTL을 가진 메시지 객체를 생성합니다.
      */
     public static ChatMessage create(String senderIp, String content) {
+        return create(senderIp, null, content);
+    }
+
+    public static ChatMessage create(String senderIp, String senderClientId, String content) {
+        return create(senderIp, null, senderClientId, content);
+    }
+
+    public static ChatMessage create(String senderIp, String senderGuestId, String senderClientId, String content) {
+        return create(senderIp, senderGuestId, senderClientId, null, content);
+    }
+
+    public static ChatMessage create(String senderIp, String senderGuestId, String senderClientId, String roomCode, String content) {
         return ChatMessage.builder()
                 .senderIp(senderIp)
+                .senderGuestId(senderGuestId)
+                .senderClientId(senderClientId)
+                .roomCode(roomCode)
                 .content(content)
                 .ttl(5)
                 .timestamp(LocalDateTime.now())

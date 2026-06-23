@@ -8,15 +8,25 @@ const MAINJS = {
     stompClient: null,
     endTime: "14:00:00",
     prevTopId: null,
+    clientId: null,
+    currentRoomCode: null,
+    roomSubscription: null,
+    roomCountSubscription: null,
 
     /**
      * 페이지 로드 시 초기화
      */
     init: function() {
         console.log("MAINJS 초기화 시작...");
+        this.clientId = sessionStorage.getItem('bubbleTalkClientId');
+        if (!this.clientId) {
+            this.clientId = window.crypto?.randomUUID ? window.crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+            sessionStorage.setItem('bubbleTalkClientId', this.clientId);
+        }
         this.connectWebSocket();
         this.fetchInitialData();
         this.fetchExtraData(); // 타이머, 어제 우승자 등 추가 데이터
+        this.fetchRooms();
         this.bindEvents();
         this.startTimers();
         this.initResizer();
@@ -148,7 +158,7 @@ const MAINJS = {
 
                 // 발신자 IP에 따른 버블 생성 (SYSTEM 여부 확인)
                 const isSystem = chatMsg.senderIp === 'SYSTEM';
-                this.createBullet(chatMsg.content, chatMsg.senderIp, isSystem);
+                this.createBullet(chatMsg.content, chatMsg.senderIp, isSystem, chatMsg.senderClientId);
             });
 
             // [구독] 실시간 접속자 수 업데이트
@@ -161,7 +171,7 @@ const MAINJS = {
             });
 
             // [구독] 나에게만 오는 에러/알림 메시지 (도배 방지 등)
-            this.stompClient.subscribe('/user/topic/errors', (response) => {
+            this.stompClient.subscribe('/user/queue/errors', (response) => {
                 const chatMsg = JSON.parse(response.body);
                 this.createBullet(chatMsg.content, chatMsg.senderIp, true);
             });
@@ -206,6 +216,93 @@ const MAINJS = {
         }
     },
 
+    fetchRooms: async function() {
+        try {
+            const response = await COMMON_AJAX.get('/api/rooms');
+            if (response.code === "0000") {
+                this.renderRooms(response.result || []);
+            }
+        } catch (e) {
+            console.error('채팅방 목록 조회 실패:', e);
+        }
+    },
+
+    createRoom: async function() {
+        const input = document.getElementById('room-name-input');
+        const name = input?.value?.trim();
+        if (!name) return;
+
+        try {
+            const response = await COMMON_AJAX.post('/api/rooms', {
+                name,
+                isPrivate: false,
+                maxParticipants: 10
+            }, { 'X-Client-Id': this.clientId });
+
+            if (response.code === "0000") {
+                input.value = '';
+                await this.fetchRooms();
+                await this.joinRoom(response.result.roomCode);
+            }
+        } catch (error) {
+            this.createBullet(`❌ ${error.message}`, CLIENT_IP, false, this.clientId);
+        }
+    },
+
+    joinRoomByCode: async function() {
+        const input = document.getElementById('room-code-input');
+        const roomCode = input?.value?.trim();
+        if (!roomCode) return;
+        await this.joinRoom(roomCode);
+    },
+
+    joinRoom: async function(roomCode) {
+        try {
+            const response = await COMMON_AJAX.post(`/api/rooms/${roomCode}/join`, {}, { 'X-Client-Id': this.clientId });
+            if (response.code === "0000") {
+                this.enterRoom(response.result);
+            }
+        } catch (error) {
+            this.createBullet(`❌ ${error.message}`, CLIENT_IP, false, this.clientId);
+        }
+    },
+
+    enterRoom: function(room) {
+        this.currentRoomCode = room.roomCode;
+
+        if (this.roomSubscription) this.roomSubscription.unsubscribe();
+        if (this.roomCountSubscription) this.roomCountSubscription.unsubscribe();
+
+        if (this.stompClient?.connected) {
+            this.roomSubscription = this.stompClient.subscribe(`/topic/rooms/${room.roomCode}/bubbles`, (response) => {
+                const chatMsg = JSON.parse(response.body);
+                this.createBullet(chatMsg.content, chatMsg.senderIp, chatMsg.senderIp === 'SYSTEM', chatMsg.senderClientId);
+            });
+            this.roomCountSubscription = this.stompClient.subscribe(`/topic/rooms/${room.roomCode}/user-count`, (response) => {
+                const label = document.getElementById('current-room-label');
+                if (label) label.textContent = `${room.name} (${response.body}/${room.maxParticipants})`;
+            });
+        }
+
+        const label = document.getElementById('current-room-label');
+        if (label) label.textContent = `${room.name} (${room.currentParticipants}/${room.maxParticipants})`;
+    },
+
+    renderRooms: function(rooms) {
+        const list = document.getElementById('room-list');
+        if (!list) return;
+        list.innerHTML = '';
+
+        rooms.forEach(room => {
+            const row = document.createElement('button');
+            row.type = 'button';
+            row.className = 'show-more-btn';
+            row.textContent = `${room.name} (${room.currentParticipants}/${room.maxParticipants})`;
+            row.addEventListener('click', () => this.joinRoom(room.roomCode));
+            list.appendChild(row);
+        });
+    },
+
     /**
      * 메뉴 추가 (REST)
      */
@@ -215,15 +312,15 @@ const MAINJS = {
         if (!name) return;
 
         try {
-            const response = await COMMON_AJAX.post('/api/menu/add', { menuName: name });
+            const response = await COMMON_AJAX.post('/api/menu/add', { menuName: name }, { 'X-Client-Id': this.clientId });
             if (response.code === "0000") {
-                this.createBullet(`🚀 [${name}] 전장 투입!`, 'SYSTEM', true);
+                this.createBullet(`[${name}] 후보에 추가됐어요`, 'SYSTEM', true);
                 input.value = '';
             }
         } catch (error) {
             console.error("메뉴 추가/투표 에러:", error);
             // 에러 메시지(중복 투표 등)를 버블로 표시
-            this.createBullet(`❌ ${error.message}`, CLIENT_IP, false);
+            this.createBullet(`❌ ${error.message}`, CLIENT_IP, false, this.clientId);
             input.value = '';
         }
     },
@@ -234,14 +331,14 @@ const MAINJS = {
     vote: async function(menuId, menuName) {
         if (!menuId) return;
         try {
-            const response = await COMMON_AJAX.post('/api/menu/vote', { menuId: Number(menuId) });
+            const response = await COMMON_AJAX.post('/api/menu/vote', { menuId: Number(menuId) }, { 'X-Client-Id': this.clientId });
             if (response.code === "0000") {
-                this.createBullet(`${menuName} +1 화력 지원!`, 'SYSTEM', true);
+                this.createBullet(`${menuName}에 한 표 더했어요`, 'SYSTEM', true);
             }
         } catch (error) {
             console.error("투표 에러:", error);
             // 에러 시 본인에게만 빨간 버블로 표시
-            this.createBullet(`❌ ${error.message}`, CLIENT_IP, false);
+            this.createBullet(`❌ ${error.message}`, CLIENT_IP, false, this.clientId);
         }
     },
 
@@ -277,7 +374,7 @@ const MAINJS = {
         if (sorted.length > 0 && sorted[0].finalScore > 0) {
             const currentTop = sorted[0];
             if (this.prevTopId && this.prevTopId !== currentTop.id) {
-                this.createBullet(`🔥 역전! [${currentTop.menuName}]이 1위로 올라섰습니다!`, 'SYSTEM', true);
+                this.createBullet(`[${currentTop.menuName}] 1위로 올라왔어요`, 'SYSTEM', true);
             }
             this.prevTopId = currentTop.id;
         }
@@ -287,7 +384,7 @@ const MAINJS = {
             const card = document.createElement('div');
             const isFirst = idx === 0 && item.finalScore > 0;
             
-            card.className = `battle-card p-5 flex items-center justify-between group active:scale-[0.96] transition-all cursor-pointer ${isFirst ? 'rank-1' : ''}`;
+            card.className = `battle-card ${isFirst ? 'rank-1' : ''}`;
             
             card.onclick = () => {
                 // 클릭 피드백: 살짝 흔들림
@@ -297,18 +394,14 @@ const MAINJS = {
             };
 
             card.innerHTML = `
-                <div class="flex-1">
-                    <div class="flex items-center gap-3 mb-3">
-                        <span class="text-xs font-black ${idx < 3 ? 'text-yellow-500 text-neon-yellow' : 'text-slate-500'}">#0${idx+1}</span>
-                        <h4 class="font-extrabold text-base text-slate-100 tracking-tight">${item.menuName}</h4>
-                    </div>
-                    <div class="progress-container">
-                        <div class="progress-bar" style="width: ${pct}%"></div>
-                    </div>
+                <span class="menu-rank">#${String(idx + 1).padStart(2, '0')}</span>
+                <h4 class="menu-title">${this.escapeHtml(item.menuName)}</h4>
+                <div class="menu-score">
+                    <span>${item.finalScore || 0}표</span>
+                    <strong>${pct}%</strong>
                 </div>
-                <div class="ml-6 text-right">
-                    <div class="text-2xl font-black text-white leading-none mb-1">${pct}<span class="text-xs ml-0.5 opacity-50">%</span></div>
-                    <div class="text-[10px] text-slate-500 font-mono tracking-tighter uppercase">${item.finalScore} Support</div>
+                <div class="progress-container">
+                    <div class="progress-bar" style="width: ${pct}%"></div>
                 </div>
             `;
             grid.appendChild(card);
@@ -333,13 +426,10 @@ const MAINJS = {
         list.innerHTML = '';
         sorted.forEach((item, idx) => {
             const row = document.createElement('div');
-            row.className = "flex justify-between items-center p-3 bg-slate-900/50 rounded-xl border border-slate-800/50 mb-2";
+            row.className = "ranking-row";
             row.innerHTML = `
-                <div class="flex items-center gap-3">
-                    <span class="text-xs font-mono text-slate-500">#${idx+1}</span>
-                    <span class="text-sm font-bold text-slate-300">${item.menuName}</span>
-                </div>
-                <span class="text-xs font-mono text-green-500 font-bold">${item.finalScore}표</span>
+                <span>#${idx + 1} ${this.escapeHtml(item.menuName)}</span>
+                <strong>${item.finalScore || 0}표</strong>
             `;
             list.appendChild(row);
         });
@@ -357,7 +447,10 @@ const MAINJS = {
                 const input = document.getElementById('msg-input');
                 const content = input.value.trim();
                 if (content && this.stompClient?.connected) {
-                    this.stompClient.send("/app/chat/send", {}, content);
+                    const destination = this.currentRoomCode
+                        ? `/app/rooms/${this.currentRoomCode}/chat/send`
+                        : "/app/chat/send";
+                    this.stompClient.send(destination, { clientId: this.clientId }, content);
                     input.value = '';
                 }
             });
@@ -369,6 +462,22 @@ const MAINJS = {
             addMenuForm.addEventListener('submit', (e) => {
                 e.preventDefault();
                 this.addNewMenu();
+            });
+        }
+
+        const roomCreateForm = document.getElementById('room-create-form');
+        if (roomCreateForm) {
+            roomCreateForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                this.createRoom();
+            });
+        }
+
+        const roomCodeForm = document.getElementById('room-code-form');
+        if (roomCodeForm) {
+            roomCodeForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                this.joinRoomByCode();
             });
         }
     },
@@ -414,11 +523,20 @@ const MAINJS = {
         document.getElementById('btn-show-more')?.classList.add('hidden');
     },
 
+    escapeHtml: function(value) {
+        return String(value ?? '')
+            .replaceAll('&', '&amp;')
+            .replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;')
+            .replaceAll('"', '&quot;')
+            .replaceAll("'", '&#39;');
+    },
+
     /**
      * [개선] 다채로운 색상의 팝업 버블 생성
      * 메시지가 화면 곳곳에서 랜덤하게 튀어나와 '왁자지껄'한 분위기를 연출합니다.
      */
-    createBullet: function(text, senderIp, isSpecial = false) {
+    createBullet: function(text, senderIp, isSpecial = false, senderClientId = null) {
         const container = document.getElementById('bullet-container');
         if (!container) return;
         
@@ -427,28 +545,28 @@ const MAINJS = {
         
         if (isSpecial) {
             // [SYSTEM] 공지 스타일
-            el.style.border = '2px solid #22c55e';
+            el.style.border = '2px solid #ff6b57';
             el.style.color = '#ffffff';
-            el.style.background = 'rgba(34, 197, 94, 0.5)';
-            el.style.boxShadow = '0 0 20px rgba(34, 197, 94, 0.3)';
+            el.style.background = 'rgba(255, 107, 87, 0.86)';
+            el.style.boxShadow = '0 12px 28px rgba(255, 107, 87, 0.28)';
             el.style.zIndex = '100';
-        } else if (senderIp === CLIENT_IP) {
+        } else if (senderClientId && senderClientId === this.clientId) {
             // [MY] 내 메시지 강조
-            el.style.border = '2px solid #3b82f6';
-            el.style.color = '#ffffff';
-            el.style.background = 'rgba(59, 130, 246, 0.6)';
-            el.style.boxShadow = '0 0 15px rgba(59, 130, 246, 0.4)';
+            el.style.border = '2px solid #2ec4b6';
+            el.style.color = '#0f3f3a';
+            el.style.background = 'rgba(223, 247, 243, 0.95)';
+            el.style.boxShadow = '0 12px 28px rgba(46, 196, 182, 0.24)';
             el.style.fontWeight = 'bold';
             el.style.zIndex = '90';
         } else {
             // [OTHERS] 타인 메시지 (IP 기반 고정 색상)
             const colors = [
-                'rgba(147, 197, 253, 0.35)', // Blue
-                'rgba(196, 181, 253, 0.35)', // Purple
-                'rgba(167, 243, 208, 0.35)', // Green
-                'rgba(253, 186, 116, 0.35)', // Orange
-                'rgba(244, 114, 182, 0.35)', // Pink
-                'rgba(148, 163, 184, 0.35)'  // Slate
+                'rgba(255, 209, 102, 0.78)',
+                'rgba(255, 246, 238, 0.95)',
+                'rgba(223, 247, 243, 0.92)',
+                'rgba(255, 221, 211, 0.9)',
+                'rgba(232, 230, 255, 0.9)',
+                'rgba(255, 255, 255, 0.92)'
             ];
             
             // IP를 이용한 간단한 해시 함수로 색상 결정
@@ -462,8 +580,8 @@ const MAINJS = {
             const selectedColor = colors[colorIndex];
             
             el.style.background = selectedColor;
-            el.style.borderColor = 'rgba(255, 255, 255, 0.2)';
-            el.style.color = '#f8fafc';
+            el.style.borderColor = 'rgba(255, 255, 255, 0.75)';
+            el.style.color = '#1f2937';
         }
         
         el.innerText = text;
@@ -474,7 +592,7 @@ const MAINJS = {
         
         el.style.left = `${left}%`;
         el.style.top = `${top}%`;
-        el.style.zIndex = isSpecial ? '100' : (senderIp === CLIENT_IP ? '95' : '50'); // 기본 버블도 입력폼(20)보다 높게 설정
+        el.style.zIndex = isSpecial ? '100' : (senderClientId && senderClientId === this.clientId ? '95' : '50'); // 기본 버블도 입력폼(20)보다 높게 설정
         el.style.animation = `popAndStay ${duration}s ease-in-out forwards`;
         
         container.appendChild(el);

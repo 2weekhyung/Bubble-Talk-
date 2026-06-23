@@ -1,6 +1,25 @@
+# 공통 설정 (맨 위에)
 spring:
   profiles:
-    active: dev # 기본값은 로컬 개발 환경
+    active: dev
+  jpa:
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+
+logging:
+  level:
+    org.hibernate.SQL: debug
+    org.hibernate.type.descriptor.sql.BasicBinder: trace
+
+admin:
+  username: ${ADMIN_USERNAME:admin}
+  password: ${ADMIN_PASSWORD:admin1234}
+
+bubble-talk:
+  guest:
+    cookie-secure: ${BT_GUEST_COOKIE_SECURE:false}
 
 ---
 spring:
@@ -8,9 +27,9 @@ spring:
     activate:
       on-profile: dev
   datasource:
-    url: jdbc:mysql://localhost:3306/bubbletalk?serverTimezone=Asia/Seoul&characterEncoding=UTF-8
+    url: jdbc:mysql://localhost:3306/bubble_talk?useSSL=false&allowPublicKeyRetrieval=true&characterEncoding=UTF-8&serverTimezone=Asia/Seoul
     username: root
-    password: 1234
+    password: "root"
     driver-class-name: com.mysql.cj.jdbc.Driver
   data:
     redis:
@@ -23,8 +42,7 @@ spring:
     activate:
       on-profile: prod
   datasource:
-    # 도커 내부 통신을 위해 호스트는 'db'로 고정합니다.
-    url: jdbc:mysql://db:3306/bubbletalk?serverTimezone=Asia/Seoul&characterEncoding=UTF-8
+    url: jdbc:mysql://db:3306/bubbletalk?useSSL=false&allowPublicKeyRetrieval=true&characterEncoding=UTF-8&serverTimezone=Asia/Seoul
     username: root
     password: root
     driver-class-name: com.mysql.cj.jdbc.Driver
@@ -33,20 +51,5 @@ spring:
       ddl-auto: update
   data:
     redis:
-      # 도커 내부 통신을 위해 호스트는 'redis'로 고정합니다.
       host: redis
       port: 6379
-
----
-# 공통 설정
-spring:
-  jpa:
-    show-sql: true
-    properties:
-      hibernate:
-        format_sql: true
-
-logging:
-  level:
-    org.hibernate.SQL: debug
-    org.hibernate.type.descriptor.sql.BasicBinder: trace

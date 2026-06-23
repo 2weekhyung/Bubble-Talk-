@@ -13,6 +13,12 @@
                 <p class="text-slate-500 text-sm">서비스 운영 및 실시간 모니터링 시스템</p>
             </div>
             <div class="flex gap-2">
+                <form th:action="@{/logout}" method="post">
+                    <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+                    <button type="submit" class="px-4 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs font-bold hover:bg-slate-700 transition-all">
+                        <i class="fa-solid fa-right-from-bracket mr-1"></i> Logout
+                    </button>
+                </form>
                 <button onclick="ADMIN.refreshAllCache()" class="px-4 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs font-bold hover:bg-slate-700 transition-all">
                     <i class="fa-solid fa-sync mr-1"></i> 전체 캐시 갱신
                 </button>

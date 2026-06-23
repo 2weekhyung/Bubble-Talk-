@@ -35,6 +35,10 @@ public enum RedisKey {
      */
     CHAT_USER_COUNT("chat:user:count"),
 
+    ROOM("room:"),
+
+    ROOM_SESSION_ROOMS("room:session:rooms:"),
+
     /**
      * 점심 메뉴 실시간 랭킹 키 (ZSet, Prefix)
      * 구조: lunch:ranking:{yyyyMMdd}
@@ -46,6 +50,8 @@ public enum RedisKey {
      * 구조: lunch:voters:{yyyyMMdd}:{menuId}
      */
     LUNCH_VOTER("lunch:voters:"),
+
+    MENU_ADD_RATELIMIT("menu:add:ratelimit:"),
 
     /**
      * 점심 메뉴 타임 어택 활성화 상태 키 (Value)

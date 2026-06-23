@@ -20,7 +20,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         config.setApplicationDestinationPrefixes("/app");
         
         // 서버에서 클라이언트에게 메시지를 쏠 때 사용하는 주제 접두사 (예: /topic/bubbles)
-        config.enableSimpleBroker("/topic");
+        config.enableSimpleBroker("/topic", "/queue");
     }
 
     @Override

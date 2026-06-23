@@ -2,12 +2,15 @@ package com.bubbletalk.chat.controller;
 
 import com.bubbletalk.chat.entity.ChatMessage;
 import com.bubbletalk.chat.service.ChatService;
+import com.bubbletalk.chatroom.service.ChatRoomService;
 import com.bubbletalk.global.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.messaging.handler.annotation.DestinationVariable;
 import org.springframework.messaging.handler.annotation.MessageExceptionHandler;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.SendTo;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.messaging.simp.annotation.SendToUser;
 import org.springframework.stereotype.Controller;
@@ -18,34 +21,61 @@ import org.springframework.stereotype.Controller;
 public class ChatSocketController {
 
     private final ChatService chatService;
+    private final ChatRoomService chatRoomService;
+    private final SimpMessagingTemplate messagingTemplate;
 
-    /**
-     * [채팅 발신 처리]
-     * 사용자가 /app/chat/send 로 메시지를 보내면 호출됩니다.
-     */
     @MessageMapping("/chat/send")
     @SendTo("/topic/bubbles")
     public ChatMessage send(String content, SimpMessageHeaderAccessor headerAccessor) {
-        // 인터셉터에서 저장한 실제 IP를 가져옵니다.
-        String clientIp = (String) headerAccessor.getSessionAttributes().get("client-ip");
-        
-        // IP가 없는 예외 상황(직접 연결 등)에는 세션 ID를 식별자로 사용합니다.
+        String clientId = headerAccessor.getFirstNativeHeader("clientId");
+
+        var sessionAttributes = headerAccessor.getSessionAttributes();
+        String clientIp = sessionAttributes != null ? (String) sessionAttributes.get("client-ip") : null;
+        String guestId = sessionAttributes != null ? (String) sessionAttributes.get("guest-id") : null;
+
         if (clientIp == null) {
             clientIp = headerAccessor.getSessionId();
         }
-        
-        log.info("채팅 메시지 수신: IP={}, 내용={}", clientIp, content);
 
-        // ChatService를 통해 필터링, 도배 방지, Redis 저장 후 반환
-        return chatService.processMessage(content, clientIp);
+        log.info("chat message received: guestId={}, clientId={}, ip={}, content={}", guestId, clientId, clientIp, content);
+        return chatService.processMessage(content, clientIp, guestId, clientId);
     }
 
-    /**
-     * [도배/비즈니스 예외 처리]
-     * 채팅 처리 중 BusinessException(도배 등)이 발생하면 호출한 본인에게만 메시지를 보냅니다.
-     */
+    @MessageMapping("/rooms/{roomCode}/chat/send")
+    public void sendToRoom(@DestinationVariable String roomCode,
+                           String content,
+                           SimpMessageHeaderAccessor headerAccessor) {
+        String clientId = headerAccessor.getFirstNativeHeader("clientId");
+
+        var sessionAttributes = headerAccessor.getSessionAttributes();
+        String clientIp = sessionAttributes != null ? (String) sessionAttributes.get("client-ip") : null;
+        String guestId = sessionAttributes != null ? (String) sessionAttributes.get("guest-id") : null;
+
+        if (clientIp == null) {
+            clientIp = headerAccessor.getSessionId();
+        }
+
+        String sessionId = headerAccessor.getSessionId();
+        String requesterId = getRequesterId(guestId, clientId, clientIp);
+        long currentCount = chatRoomService.registerSession(roomCode, sessionId, requesterId);
+
+        ChatMessage chatMessage = chatService.processMessage(content, clientIp, guestId, clientId, roomCode);
+        messagingTemplate.convertAndSend("/topic/rooms/" + roomCode + "/bubbles", chatMessage);
+        messagingTemplate.convertAndSend("/topic/rooms/" + roomCode + "/user-count", currentCount);
+    }
+
+    private String getRequesterId(String guestId, String clientId, String clientIp) {
+        if (guestId != null && !guestId.isBlank()) {
+            return "guest:" + guestId;
+        }
+        if (clientId != null && !clientId.isBlank()) {
+            return "client:" + clientId;
+        }
+        return "ip:" + clientIp;
+    }
+
     @MessageExceptionHandler(BusinessException.class)
-    @SendToUser("/topic/errors")
+    @SendToUser("/queue/errors")
     public ChatMessage handleException(BusinessException e) {
         return ChatMessage.create("SYSTEM", e.getMessage());
     }

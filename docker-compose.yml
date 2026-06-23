@@ -48,6 +48,8 @@ services:
       SPRING_DATASOURCE_PASSWORD: root
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: 6379
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin1234}
       # Dockerfile의 ENTRYPOINT에서 설정한 prod 프로필 활성화 확인
       SPRING_PROFILES_ACTIVE: prod
     deploy:
