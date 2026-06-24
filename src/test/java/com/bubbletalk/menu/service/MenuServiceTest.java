@@ -12,6 +12,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.DefaultTypedTuple;
 import org.springframework.data.redis.core.SetOperations;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.data.redis.core.ZSetOperations;
@@ -20,6 +21,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -224,6 +226,28 @@ class MenuServiceTest {
         assertThrows(BusinessException.class, () -> menuService.increaseVote(1L, voterId));
 
         verify(redisTemplate, never()).opsForZSet();
+    }
+
+    @Test
+    @DisplayName("today menu count uses full ranking ZSET cardinality")
+    void getTodayMenuCount_UsesFullZSetCardinality() {
+        when(redisTemplate.opsForZSet()).thenReturn(zSetOperations);
+        when(zSetOperations.zCard(todayRankingKey())).thenReturn(14L);
+
+        assertEquals(14L, menuService.getTodayMenuCount());
+    }
+
+    @Test
+    @DisplayName("today vote count sums every ranking score")
+    void getTodayVoteCount_SumsAllScores() {
+        when(redisTemplate.opsForZSet()).thenReturn(zSetOperations);
+        when(zSetOperations.rangeWithScores(todayRankingKey(), 0, -1)).thenReturn(Set.of(
+                new DefaultTypedTuple<>("1", 3.0),
+                new DefaultTypedTuple<>("2", 7.0),
+                new DefaultTypedTuple<>("3", 2.0)
+        ));
+
+        assertEquals(12L, menuService.getTodayVoteCount());
     }
 
     private DailyMenu menu(Long id, String menuName) {

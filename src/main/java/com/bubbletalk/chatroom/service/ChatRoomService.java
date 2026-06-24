@@ -2,14 +2,19 @@ package com.bubbletalk.chatroom.service;
 
 import com.bubbletalk.chatroom.dto.ChatRoomCreateReqDto;
 import com.bubbletalk.chatroom.dto.ChatRoomResDto;
+import com.bubbletalk.chatroom.dto.AdminChatRoomResDto;
 import com.bubbletalk.chatroom.entity.ChatRoom;
 import com.bubbletalk.chatroom.entity.RoomStatus;
 import com.bubbletalk.chatroom.repository.ChatRoomRepository;
 import com.bubbletalk.global.constant.RedisKey;
 import com.bubbletalk.global.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.security.SecureRandom;
@@ -18,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 
 @Service
+@Slf4j
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class ChatRoomService {
@@ -30,33 +36,63 @@ public class ChatRoomService {
     private static final int MAX_MAX_PARTICIPANTS = 50;
     private static final int NAME_MAX_LENGTH = 100;
     private static final int DESCRIPTION_MAX_LENGTH = 255;
+    private static final DefaultRedisScript<Long> REGISTER_SESSION_SCRIPT = new DefaultRedisScript<>("""
+            local exists = redis.call('SISMEMBER', KEYS[1], ARGV[1])
+            if exists == 1 then
+                return redis.call('SCARD', KEYS[1])
+            end
+            local current = redis.call('SCARD', KEYS[1])
+            if current >= tonumber(ARGV[2]) then
+                return -1
+            end
+            redis.call('SADD', KEYS[1], ARGV[1])
+            return current + 1
+            """, Long.class);
 
     private final ChatRoomRepository chatRoomRepository;
     private final RedisTemplate<String, Object> redisTemplate;
     private final SecureRandom secureRandom = new SecureRandom();
 
-    @Transactional
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public ChatRoomResDto createRoom(ChatRoomCreateReqDto reqDto) {
         String name = normalizeName(reqDto != null ? reqDto.getName() : null);
         String description = normalizeDescription(reqDto != null ? reqDto.getDescription() : null);
         boolean privateRoom = reqDto != null && Boolean.TRUE.equals(reqDto.getIsPrivate());
         int maxParticipants = normalizeMaxParticipants(reqDto != null ? reqDto.getMaxParticipants() : null);
 
-        ChatRoom room = ChatRoom.builder()
-                .roomCode(generateRoomCode())
-                .name(name)
-                .description(description)
-                .privateRoom(privateRoom)
-                .maxParticipants(maxParticipants)
-                .build();
-
-        ChatRoom savedRoom = chatRoomRepository.save(room);
-        return toResponse(savedRoom);
+        for (int i = 0; i < ROOM_CODE_RETRY_COUNT; i++) {
+            ChatRoom room = ChatRoom.builder()
+                    .roomCode(generateRoomCode())
+                    .name(name)
+                    .description(description)
+                    .privateRoom(privateRoom)
+                    .maxParticipants(maxParticipants)
+                    .build();
+            try {
+                return toResponse(chatRoomRepository.saveAndFlush(room));
+            } catch (DataIntegrityViolationException ignored) {
+                // saveAndFlush runs without an outer transaction, so a unique collision can be retried safely.
+            }
+        }
+        throw new BusinessException("채팅방 코드를 생성하지 못했습니다. 다시 시도해주세요.");
     }
 
     public List<ChatRoomResDto> getPublicRooms() {
         return chatRoomRepository.findByPrivateRoomFalseAndStatusNotOrderByCreatedDateDesc(RoomStatus.CLOSED).stream()
                 .map(this::toResponse)
+                .toList();
+    }
+
+    public List<AdminChatRoomResDto> getAdminRooms() {
+        return chatRoomRepository.findAllByOrderByCreatedDateDesc().stream()
+                .map(room -> {
+                    long currentParticipants = getCurrentParticipants(room.getRoomCode());
+                    return AdminChatRoomResDto.from(
+                            room,
+                            currentParticipants,
+                            getEffectiveStatus(room, currentParticipants)
+                    );
+                })
                 .toList();
     }
 
@@ -74,7 +110,11 @@ public class ChatRoomService {
     public ChatRoomResDto leaveRoom(String roomCode, String requesterId) {
         ChatRoom room = getRoomOrThrow(roomCode);
         if (requesterId != null && !requesterId.isBlank()) {
-            redisTemplate.opsForSet().remove(roomGuestsKey(room.getRoomCode()), requesterId);
+            List<Object> activeActors = redisTemplate.opsForHash()
+                    .values(RedisKey.roomSessionActors(room.getRoomCode()));
+            if (activeActors == null || !activeActors.contains(requesterId)) {
+                redisTemplate.opsForSet().remove(roomGuestsKey(room.getRoomCode()), requesterId);
+            }
         }
         return toResponse(room);
     }
@@ -83,17 +123,60 @@ public class ChatRoomService {
         ChatRoom room = getRoomOrThrow(roomCode);
         validateRequester(requesterId);
         validateSessionId(sessionId);
-
-        String sessionsKey = roomSessionsKey(room.getRoomCode());
-        Boolean alreadyJoined = redisTemplate.opsForSet().isMember(sessionsKey, sessionId);
-        if (!Boolean.TRUE.equals(alreadyJoined)) {
-            validateJoinable(room);
+        if (room.getStatus() == RoomStatus.CLOSED) {
+            throw new BusinessException("종료된 채팅방에는 입장할 수 없습니다.");
         }
 
-        redisTemplate.opsForSet().add(sessionsKey, sessionId);
-        redisTemplate.opsForSet().add(roomGuestsKey(room.getRoomCode()), requesterId);
-        redisTemplate.opsForSet().add(sessionRoomsKey(sessionId), room.getRoomCode());
-        return getCurrentParticipants(room.getRoomCode());
+        String normalizedRoomCode = room.getRoomCode();
+        Long currentCount;
+        try {
+            currentCount = redisTemplate.execute(
+                    REGISTER_SESSION_SCRIPT,
+                    List.of(RedisKey.roomSessions(normalizedRoomCode)),
+                    sessionId,
+                    room.getMaxParticipants()
+            );
+        } catch (RuntimeException e) {
+            log.error("room session registration failed: roomCode={}, sessionId={}",
+                    normalizedRoomCode, sessionId, e);
+            throw new BusinessException("채팅방 입장 상태를 확인하지 못했습니다. 잠시 후 다시 시도해주세요.");
+        }
+        if (currentCount == null) {
+            throw new BusinessException("채팅방 입장 상태를 확인하지 못했습니다. 잠시 후 다시 시도해주세요.");
+        }
+        if (currentCount < 0) {
+            throw new BusinessException("채팅방 인원이 가득 찼습니다.");
+        }
+
+        try {
+            redisTemplate.opsForSet().add(RedisKey.roomGuests(normalizedRoomCode), requesterId);
+            redisTemplate.opsForHash().put(RedisKey.roomSessionActors(normalizedRoomCode), sessionId, requesterId);
+            redisTemplate.opsForSet().add(RedisKey.sessionRooms(sessionId), normalizedRoomCode);
+            return currentCount;
+        } catch (RuntimeException e) {
+            unregisterSession(normalizedRoomCode, sessionId);
+            throw new BusinessException("채팅방 입장 정보를 저장하지 못했습니다. 잠시 후 다시 시도해주세요.");
+        }
+    }
+
+    public long unregisterSession(String roomCode, String sessionId) {
+        if (roomCode == null || roomCode.isBlank() || sessionId == null || sessionId.isBlank()) {
+            return 0L;
+        }
+
+        String normalizedRoomCode = roomCode.trim();
+        String actorKey = RedisKey.roomSessionActors(normalizedRoomCode);
+        Object requesterId = redisTemplate.opsForHash().get(actorKey, sessionId);
+
+        redisTemplate.opsForSet().remove(RedisKey.roomSessions(normalizedRoomCode), sessionId);
+        redisTemplate.opsForHash().delete(actorKey, sessionId);
+        redisTemplate.opsForSet().remove(RedisKey.sessionRooms(sessionId), normalizedRoomCode);
+
+        List<Object> activeActors = redisTemplate.opsForHash().values(actorKey);
+        if (requesterId != null && (activeActors == null || !activeActors.contains(requesterId))) {
+            redisTemplate.opsForSet().remove(RedisKey.roomGuests(normalizedRoomCode), requesterId);
+        }
+        return getCurrentParticipants(normalizedRoomCode);
     }
 
     public Map<String, Long> unregisterSessionFromAllRooms(String sessionId) {
@@ -102,7 +185,7 @@ public class ChatRoomService {
             return result;
         }
 
-        String sessionRoomsKey = sessionRoomsKey(sessionId);
+        String sessionRoomsKey = RedisKey.sessionRooms(sessionId);
         var roomCodes = redisTemplate.opsForSet().members(sessionRoomsKey);
         if (roomCodes == null || roomCodes.isEmpty()) {
             return result;
@@ -110,8 +193,7 @@ public class ChatRoomService {
 
         for (Object roomCodeObj : roomCodes) {
             String roomCode = String.valueOf(roomCodeObj);
-            redisTemplate.opsForSet().remove(roomSessionsKey(roomCode), sessionId);
-            result.put(roomCode, getCurrentParticipants(roomCode));
+            result.put(roomCode, unregisterSession(roomCode, sessionId));
         }
 
         redisTemplate.delete(sessionRoomsKey);
@@ -119,8 +201,13 @@ public class ChatRoomService {
     }
 
     public long getCurrentParticipants(String roomCode) {
-        Long size = redisTemplate.opsForSet().size(roomSessionsKey(roomCode));
-        return size != null ? size : 0L;
+        try {
+            Long size = redisTemplate.opsForSet().size(RedisKey.roomSessions(roomCode));
+            return size != null ? size : 0L;
+        } catch (RuntimeException e) {
+            log.warn("room participant count fallback to zero: roomCode={}", roomCode, e);
+            return 0L;
+        }
     }
 
     private ChatRoom getRoomOrThrow(String roomCode) {
@@ -237,15 +324,7 @@ public class ChatRoomService {
                 || lowerValue.contains("script");
     }
 
-    private String roomSessionsKey(String roomCode) {
-        return RedisKey.ROOM.with(roomCode + ":sessions");
-    }
-
     private String roomGuestsKey(String roomCode) {
-        return RedisKey.ROOM.with(roomCode + ":guests");
-    }
-
-    private String sessionRoomsKey(String sessionId) {
-        return RedisKey.ROOM_SESSION_ROOMS.with(sessionId);
+        return RedisKey.roomGuests(roomCode);
     }
 }

@@ -13,4 +13,6 @@ public interface ChatRoomRepository extends JpaRepository<ChatRoom, Long> {
     Optional<ChatRoom> findByRoomCode(String roomCode);
 
     List<ChatRoom> findByPrivateRoomFalseAndStatusNotOrderByCreatedDateDesc(RoomStatus status);
+
+    List<ChatRoom> findAllByOrderByCreatedDateDesc();
 }

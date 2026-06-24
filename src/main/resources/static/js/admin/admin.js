@@ -2,15 +2,17 @@
  * [Admin JS] 관리자 대시보드 제어 로직
  */
 const ADMIN = {
+    stompClient: null,
+
     init: function() {
         console.log("관리자 대시보드 초기화...");
         this.fetchForbiddenWords();
-        this.fetchStats();
+        this.fetchSummary();
+        this.fetchRooms();
         this.fetchEventStatus();
         this.fetchLunchTimes(); // 추가
         this.fetchHistory();
-        this.connectStatsSocket();
-        this.connectChatSocket();
+        this.connectWebSocket();
     },
 
     /**
@@ -158,17 +160,77 @@ const ADMIN = {
     /**
      * 통계 데이터 가져오기
      */
-    fetchStats: async function() {
+    fetchSummary: async function() {
         try {
-            const response = await COMMON_AJAX.get('/api/menu/rankings');
+            const response = await COMMON_AJAX.get('/api/admin/dashboard/summary');
             if (response.code === "0000") {
-                const menus = response.result.menuList;
-                const totalVotes = menus.reduce((acc, cur) => acc + (cur.finalScore || 0), 0);
-                
-                document.getElementById('admin-menu-count').innerText = menus.length;
-                document.getElementById('admin-total-votes').innerText = totalVotes.toLocaleString();
+                const summary = response.result;
+                document.getElementById('admin-user-count').innerText = summary.activeSessions.toLocaleString();
+                document.getElementById('admin-menu-count').innerText = summary.todayMenuCount.toLocaleString();
+                document.getElementById('admin-total-votes').innerText = summary.todayVoteCount.toLocaleString();
+                document.getElementById('admin-total-rooms').innerText = summary.totalRooms.toLocaleString();
+                document.getElementById('admin-public-rooms').innerText = summary.publicRooms.toLocaleString();
+                document.getElementById('admin-private-rooms').innerText = summary.privateRooms.toLocaleString();
+                document.getElementById('admin-open-rooms').innerText = summary.openRooms.toLocaleString();
+                document.getElementById('admin-full-rooms').innerText = summary.fullRooms.toLocaleString();
+                document.getElementById('admin-closed-rooms').innerText = summary.closedRooms.toLocaleString();
+                this.updateRedisStatus(summary.redisAvailable);
             }
-        } catch (e) {}
+        } catch (e) {
+            console.error("관리자 요약 조회 실패", e);
+            this.updateRedisStatus(false);
+        }
+    },
+
+    updateRedisStatus: function(available) {
+        const badge = document.getElementById('admin-redis-status');
+        if (!badge) return;
+        badge.textContent = available ? 'Redis 정상' : 'Redis 오류';
+        badge.className = available
+            ? 'text-[10px] px-2 py-1 rounded border font-bold uppercase text-green-500 border-green-500/30 bg-green-500/10'
+            : 'text-[10px] px-2 py-1 rounded border font-bold uppercase text-red-500 border-red-500/30 bg-red-500/10';
+    },
+
+    fetchRooms: async function() {
+        try {
+            const response = await COMMON_AJAX.get('/api/admin/rooms');
+            if (response.code === "0000") {
+                this.renderRooms(response.result || []);
+            }
+        } catch (e) {
+            console.error("관리자 채팅방 목록 조회 실패", e);
+        }
+    },
+
+    renderRooms: function(rooms) {
+        const list = document.getElementById('admin-room-list');
+        if (!list) return;
+        list.innerHTML = '';
+
+        rooms.forEach(room => {
+            const tr = document.createElement('tr');
+            tr.className = 'hover:bg-slate-800/30 transition-colors';
+            [
+                room.roomCode,
+                room.name,
+                room.privateRoom ? '비밀' : '공개',
+                room.status,
+                `${room.currentParticipants}/${room.maxParticipants}`,
+                this.formatDateTime(room.createdAt),
+                this.formatDateTime(room.closedAt)
+            ].forEach(value => {
+                const td = document.createElement('td');
+                td.className = 'py-3 px-2 text-slate-300';
+                td.textContent = value ?? '-';
+                tr.appendChild(td);
+            });
+            list.appendChild(tr);
+        });
+    },
+
+    formatDateTime: function(value) {
+        if (!value) return '-';
+        return new Date(value).toLocaleString('ko-KR', { hour12: false });
     },
 
     /**
@@ -223,7 +285,7 @@ const ADMIN = {
         try {
             const response = await COMMON_AJAX.post('/api/menu/admin/reset');
             if (response.code === "0000") {
-                this.fetchStats();
+                this.fetchSummary();
                 alert('오늘의 데이터가 초기화되었습니다.');
             }
         } catch (e) {
@@ -271,29 +333,17 @@ const ADMIN = {
     /**
      * 실시간 접속자 수 수신을 위한 소켓 연결
      */
-    connectStatsSocket: function() {
+    connectWebSocket: function() {
         const socket = new SockJS('/ws-bubble');
-        const stompClient = Stomp.over(socket);
-        stompClient.debug = null;
+        this.stompClient = Stomp.over(socket);
+        this.stompClient.debug = null;
 
-        stompClient.connect({}, () => {
-            stompClient.subscribe('/topic/user-count', (response) => {
+        this.stompClient.connect({}, () => {
+            this.stompClient.subscribe('/topic/user-count', (response) => {
                 const count = JSON.parse(response.body);
                 document.getElementById('admin-user-count').innerText = count.toLocaleString();
             });
-        });
-    },
-
-    /**
-     * 실시간 채팅 모니터링 소켓 연결
-     */
-    connectChatSocket: function() {
-        const socket = new SockJS('/ws-bubble');
-        const stompClient = Stomp.over(socket);
-        stompClient.debug = null;
-
-        stompClient.connect({}, () => {
-            stompClient.subscribe('/topic/chat', (response) => {
+            this.stompClient.subscribe('/topic/bubbles', (response) => {
                 const msg = JSON.parse(response.body);
                 this.renderChatMessage(msg);
             });
@@ -311,19 +361,40 @@ const ADMIN = {
         div.className = "flex gap-3 animate-slide-in";
         
         const time = new Date().toLocaleTimeString('ko-KR', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
-        const color = this.getIpColor(msg.senderIp);
+        const actor = msg.senderGuestId
+            ? `guest:${msg.senderGuestId}`
+            : msg.senderClientId
+                ? `client:${msg.senderClientId}`
+                : msg.senderIp || msg.sender || 'unknown';
+        const room = msg.roomCode || '전역';
+        const color = this.getIpColor(actor);
 
-        div.innerHTML = `
-            <span class="text-[10px] text-slate-600 font-mono mt-0.5">${time}</span>
-            <div class="flex-1">
-                <div class="flex items-center gap-2 mb-1">
-                    <span class="font-bold" style="color: ${color}">${msg.senderIp}</span>
-                </div>
-                <div class="bg-slate-800 border border-slate-700 p-2 rounded-lg text-slate-200 break-all">
-                    ${msg.message}
-                </div>
-            </div>
-        `;
+        const timeElement = document.createElement('span');
+        timeElement.className = 'text-[10px] text-slate-600 font-mono mt-0.5';
+        timeElement.textContent = time;
+
+        const body = document.createElement('div');
+        body.className = 'flex-1';
+
+        const meta = document.createElement('div');
+        meta.className = 'flex items-center gap-2 mb-1';
+
+        const actorElement = document.createElement('span');
+        actorElement.className = 'font-bold';
+        actorElement.style.color = color;
+        actorElement.textContent = actor;
+
+        const roomElement = document.createElement('span');
+        roomElement.className = 'text-[10px] text-cyan-500';
+        roomElement.textContent = `[${room}]`;
+
+        const content = document.createElement('div');
+        content.className = 'bg-slate-800 border border-slate-700 p-2 rounded-lg text-slate-200 break-all';
+        content.textContent = msg.content || '';
+
+        meta.append(actorElement, roomElement);
+        body.append(meta, content);
+        div.append(timeElement, body);
 
         list.prepend(div); // 최신 메시지가 위로
 

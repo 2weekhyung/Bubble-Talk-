@@ -45,7 +45,12 @@ public class SecurityConfig {
                         .permitAll()
                 )
                 .csrf(csrf -> csrf
-                        .ignoringRequestMatchers("/ws-bubble/**", "/api/rooms/**")
+                        .ignoringRequestMatchers(
+                                "/ws-bubble/**",
+                                "/api/rooms/**",
+                                "/api/menu/add",
+                                "/api/menu/vote"
+                        )
                 )
                 .logout(logout -> logout
                         .logoutSuccessUrl("/")

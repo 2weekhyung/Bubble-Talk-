@@ -1,6 +1,7 @@
 package com.bubbletalk.admin.dashboard.controller;
 
 import com.bubbletalk.base.dto.BaseResDto;
+import com.bubbletalk.admin.dashboard.service.AdminDashboardService;
 import com.bubbletalk.menu.service.MenuService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -19,6 +20,17 @@ public class AdminDashBoardRestController {
 
     private final MenuService menuService;
     private final com.bubbletalk.menu.controller.MenuSocketController socketController;
+    private final AdminDashboardService adminDashboardService;
+
+    @GetMapping("/dashboard/summary")
+    public ResponseEntity<BaseResDto> getDashboardSummary() {
+        return ResponseEntity.ok(BaseResDto.ok(adminDashboardService.getSummary()));
+    }
+
+    @GetMapping("/rooms")
+    public ResponseEntity<BaseResDto> getRooms() {
+        return ResponseEntity.ok(BaseResDto.ok(adminDashboardService.getRooms()));
+    }
 
     /**
      * [POST] /api/admin/announcement

@@ -255,6 +255,26 @@ public class MenuService {
         }
     }
 
+    public long getTodayMenuCount() {
+        String today = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
+        Long count = redisTemplate.opsForZSet().zCard(RedisKey.LUNCH_RANKING.with(today));
+        return count != null ? count : 0L;
+    }
+
+    public long getTodayVoteCount() {
+        String today = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
+        Set<ZSetOperations.TypedTuple<Object>> entries = redisTemplate.opsForZSet()
+                .rangeWithScores(RedisKey.LUNCH_RANKING.with(today), 0, -1);
+        if (entries == null || entries.isEmpty()) {
+            return 0L;
+        }
+        return entries.stream()
+                .map(ZSetOperations.TypedTuple::getScore)
+                .filter(Objects::nonNull)
+                .mapToLong(Double::longValue)
+                .sum();
+    }
+
     /**
      * [이력 조회] 과거 점심 투표 결과 이력을 조회합니다.
      */

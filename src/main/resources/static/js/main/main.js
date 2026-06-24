@@ -176,6 +176,10 @@ const MAINJS = {
                 this.createBullet(chatMsg.content, chatMsg.senderIp, true);
             });
 
+            if (this.currentRoomCode) {
+                this.joinRoom(this.currentRoomCode);
+            }
+
         }, (error) => {
             console.error('WebSocket 접속 에러:', error);
             setTimeout(() => this.connectWebSocket(), 5000);
@@ -230,13 +234,15 @@ const MAINJS = {
     createRoom: async function() {
         const input = document.getElementById('room-name-input');
         const name = input?.value?.trim();
+        const privateRoom = Boolean(document.getElementById('room-private-input')?.checked);
+        const maxParticipants = Number(document.getElementById('room-max-input')?.value || 10);
         if (!name) return;
 
         try {
             const response = await COMMON_AJAX.post('/api/rooms', {
                 name,
-                isPrivate: false,
-                maxParticipants: 10
+                isPrivate: privateRoom,
+                maxParticipants
             }, { 'X-Client-Id': this.clientId });
 
             if (response.code === "0000") {
@@ -268,6 +274,10 @@ const MAINJS = {
     },
 
     enterRoom: function(room) {
+        const previousRoomCode = this.currentRoomCode;
+        if (previousRoomCode && previousRoomCode !== room.roomCode && this.stompClient?.connected) {
+            this.stompClient.send(`/app/rooms/${previousRoomCode}/leave`, { clientId: this.clientId }, '');
+        }
         this.currentRoomCode = room.roomCode;
 
         if (this.roomSubscription) this.roomSubscription.unsubscribe();
@@ -282,6 +292,7 @@ const MAINJS = {
                 const label = document.getElementById('current-room-label');
                 if (label) label.textContent = `${room.name} (${response.body}/${room.maxParticipants})`;
             });
+            this.stompClient.send(`/app/rooms/${room.roomCode}/join`, { clientId: this.clientId }, '');
         }
 
         const label = document.getElementById('current-room-label');
@@ -600,4 +611,8 @@ const MAINJS = {
     }
 };
 
-document.addEventListener('DOMContentLoaded', () => MAINJS.init());
+document.addEventListener('DOMContentLoaded', () => {
+    if (document.getElementById('bamboo-forest')) {
+        MAINJS.init();
+    }
+});

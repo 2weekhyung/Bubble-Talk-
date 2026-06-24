@@ -72,6 +72,43 @@
             </div>
         </div>
 
+        <!-- 채팅방 운영 요약 -->
+        <section class="bg-slate-900/50 border border-slate-800 rounded-2xl p-6 shadow-xl mb-8">
+            <div class="flex items-center justify-between mb-5">
+                <h3 class="text-xl font-bold italic">
+                    <i class="fa-solid fa-door-open text-cyan-500 mr-2"></i>Room Operations
+                </h3>
+                <span id="admin-redis-status"
+                      class="text-[10px] px-2 py-1 rounded border font-bold uppercase">Redis 확인 중</span>
+            </div>
+            <div class="grid grid-cols-2 md:grid-cols-6 gap-3">
+                <div class="p-3 bg-slate-800/50 rounded-xl border border-slate-700">
+                    <p class="text-[10px] text-slate-500 uppercase font-bold">Total</p>
+                    <strong id="admin-total-rooms" class="text-2xl">0</strong>
+                </div>
+                <div class="p-3 bg-slate-800/50 rounded-xl border border-slate-700">
+                    <p class="text-[10px] text-slate-500 uppercase font-bold">Public</p>
+                    <strong id="admin-public-rooms" class="text-2xl">0</strong>
+                </div>
+                <div class="p-3 bg-slate-800/50 rounded-xl border border-slate-700">
+                    <p class="text-[10px] text-slate-500 uppercase font-bold">Private</p>
+                    <strong id="admin-private-rooms" class="text-2xl">0</strong>
+                </div>
+                <div class="p-3 bg-slate-800/50 rounded-xl border border-slate-700">
+                    <p class="text-[10px] text-green-500 uppercase font-bold">Open</p>
+                    <strong id="admin-open-rooms" class="text-2xl">0</strong>
+                </div>
+                <div class="p-3 bg-slate-800/50 rounded-xl border border-slate-700">
+                    <p class="text-[10px] text-yellow-500 uppercase font-bold">Full</p>
+                    <strong id="admin-full-rooms" class="text-2xl">0</strong>
+                </div>
+                <div class="p-3 bg-slate-800/50 rounded-xl border border-slate-700">
+                    <p class="text-[10px] text-red-500 uppercase font-bold">Closed</p>
+                    <strong id="admin-closed-rooms" class="text-2xl">0</strong>
+                </div>
+            </div>
+        </section>
+
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
             <!-- 금칙어 관리 섹션 -->
             <section class="bg-slate-900/50 border border-slate-800 rounded-2xl p-6 shadow-xl">
@@ -135,6 +172,8 @@
                     </div>
                 </div>
             </section>
+        </div>
+
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-8">
             <!-- 점심 투표 이력 섹션 -->
             <section class="bg-slate-900/50 border border-slate-800 rounded-2xl p-6 shadow-xl">
@@ -171,6 +210,36 @@
                 </div>
             </section>
         </div>
+
+        <!-- 전체 채팅방 목록 -->
+        <section class="bg-slate-900/50 border border-slate-800 rounded-2xl p-6 shadow-xl mt-8">
+            <div class="flex items-center justify-between mb-6">
+                <h3 class="text-xl font-bold italic">
+                    <i class="fa-solid fa-list text-cyan-500 mr-2"></i>Chat Rooms
+                </h3>
+                <button onclick="ADMIN.fetchRooms()"
+                        class="px-3 py-1.5 rounded-lg text-xs font-bold border border-slate-700 hover:bg-slate-800">
+                    새로고침
+                </button>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-sm">
+                    <thead class="text-slate-500 uppercase text-[10px] font-bold border-b border-slate-800">
+                        <tr>
+                            <th class="pb-3 px-2">Room Code</th>
+                            <th class="pb-3 px-2">방 이름</th>
+                            <th class="pb-3 px-2">공개 여부</th>
+                            <th class="pb-3 px-2">상태</th>
+                            <th class="pb-3 px-2">현재/최대</th>
+                            <th class="pb-3 px-2">생성 시각</th>
+                            <th class="pb-3 px-2">종료 시각</th>
+                        </tr>
+                    </thead>
+                    <tbody id="admin-room-list" class="divide-y divide-slate-800/50">
+                    </tbody>
+                </table>
+            </div>
+        </section>
     </div>
 
     <!-- 전용 스크립트 -->

@@ -13,8 +13,11 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.HashOperations;
 import org.springframework.data.redis.core.SetOperations;
+import org.springframework.data.redis.core.script.RedisScript;
 
 import java.util.List;
 import java.util.Optional;
@@ -25,9 +28,11 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.startsWith;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -43,6 +48,9 @@ class ChatRoomServiceTest {
     @Mock
     private SetOperations<String, Object> setOperations;
 
+    @Mock
+    private HashOperations<String, Object, Object> hashOperations;
+
     private ChatRoomService chatRoomService;
 
     @BeforeEach
@@ -54,8 +62,7 @@ class ChatRoomServiceTest {
     @DisplayName("public room creation succeeds")
     void createRoom_PublicSuccess() {
         ChatRoomCreateReqDto req = createReq("점심 채팅", "공개방", false, 10);
-        when(chatRoomRepository.existsByRoomCode(any())).thenReturn(false);
-        when(chatRoomRepository.save(any(ChatRoom.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(chatRoomRepository.saveAndFlush(any(ChatRoom.class))).thenAnswer(invocation -> invocation.getArgument(0));
         mockAnyRoomSize(0L);
 
         ChatRoomResDto result = chatRoomService.createRoom(req);
@@ -70,14 +77,28 @@ class ChatRoomServiceTest {
     @DisplayName("private room creation succeeds")
     void createRoom_PrivateSuccess() {
         ChatRoomCreateReqDto req = createReq("비밀 채팅", null, true, null);
-        when(chatRoomRepository.existsByRoomCode(any())).thenReturn(false);
-        when(chatRoomRepository.save(any(ChatRoom.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(chatRoomRepository.saveAndFlush(any(ChatRoom.class))).thenAnswer(invocation -> invocation.getArgument(0));
         mockAnyRoomSize(0L);
 
         ChatRoomResDto result = chatRoomService.createRoom(req);
 
         assertTrue(result.isPrivate());
         assertEquals(10, result.getMaxParticipants());
+    }
+
+    @Test
+    @DisplayName("room code unique collision is retried")
+    void createRoom_RetriesUniqueCollision() {
+        ChatRoomCreateReqDto req = createReq("room", null, false, 10);
+        when(chatRoomRepository.saveAndFlush(any(ChatRoom.class)))
+                .thenThrow(new DataIntegrityViolationException("duplicate room_code"))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        mockAnyRoomSize(0L);
+
+        ChatRoomResDto result = chatRoomService.createRoom(req);
+
+        assertEquals("room", result.getName());
+        verify(chatRoomRepository, times(2)).saveAndFlush(any(ChatRoom.class));
     }
 
     @Test
@@ -111,6 +132,25 @@ class ChatRoomServiceTest {
         assertEquals(1, result.size());
         assertEquals("PUBLIC01", result.get(0).getRoomCode());
         assertEquals(2L, result.get(0).getCurrentParticipants());
+    }
+
+    @Test
+    @DisplayName("admin room list includes public, private, and closed rooms")
+    void getAdminRooms_IncludesAllRoomTypes() {
+        ChatRoom publicRoom = room("PUBLIC01", "공개방", false, 10);
+        ChatRoom privateRoom = room("PRIVATE1", "비밀방", true, 10);
+        ChatRoom closedRoom = room("CLOSED01", "닫힌방", false, 10);
+        org.springframework.test.util.ReflectionTestUtils.setField(closedRoom, "status", RoomStatus.CLOSED);
+        when(chatRoomRepository.findAllByOrderByCreatedDateDesc())
+                .thenReturn(List.of(publicRoom, privateRoom, closedRoom));
+        when(redisTemplate.opsForSet()).thenReturn(setOperations);
+        when(setOperations.size(anyString())).thenReturn(0L);
+
+        var result = chatRoomService.getAdminRooms();
+
+        assertEquals(3, result.size());
+        assertTrue(result.stream().anyMatch(room -> room.isPrivateRoom()));
+        assertTrue(result.stream().anyMatch(room -> room.getStatus() == RoomStatus.CLOSED));
     }
 
     @Test
@@ -162,15 +202,57 @@ class ChatRoomServiceTest {
     }
 
     @Test
+    @DisplayName("current participants fall back to zero when Redis is unavailable")
+    void getCurrentParticipants_RedisFailureFallsBackToZero() {
+        when(redisTemplate.opsForSet()).thenThrow(new IllegalStateException("redis unavailable"));
+
+        assertEquals(0L, chatRoomService.getCurrentParticipants("ROOM0001"));
+    }
+
+    @Test
+    @DisplayName("session registration uses atomic Redis capacity check")
+    void registerSession_UsesAtomicCapacityCheck() {
+        ChatRoom room = room("ROOM0001", "room", false, 2);
+        when(chatRoomRepository.findByRoomCode("ROOM0001")).thenReturn(Optional.of(room));
+        when(redisTemplate.execute(any(RedisScript.class), anyList(), any(), any())).thenReturn(1L);
+        when(redisTemplate.opsForSet()).thenReturn(setOperations);
+        when(redisTemplate.opsForHash()).thenReturn(hashOperations);
+
+        long result = chatRoomService.registerSession("ROOM0001", "session-1", "guest:abc");
+
+        assertEquals(1L, result);
+        verify(setOperations).add(RedisKey.roomGuests("ROOM0001"), "guest:abc");
+        verify(hashOperations).put(RedisKey.roomSessionActors("ROOM0001"), "session-1", "guest:abc");
+        verify(setOperations).add(RedisKey.sessionRooms("session-1"), "ROOM0001");
+    }
+
+    @Test
+    @DisplayName("atomic Redis capacity check rejects a full room")
+    void registerSession_FullRoomFailsAtomically() {
+        ChatRoom room = room("ROOM0001", "room", false, 2);
+        when(chatRoomRepository.findByRoomCode("ROOM0001")).thenReturn(Optional.of(room));
+        when(redisTemplate.execute(any(RedisScript.class), anyList(), any(), any())).thenReturn(-1L);
+
+        assertThrows(BusinessException.class,
+                () -> chatRoomService.registerSession("ROOM0001", "session-1", "guest:abc"));
+
+        verify(redisTemplate, never()).opsForHash();
+    }
+
+    @Test
     @DisplayName("disconnect removes session from joined room sets")
     void unregisterSessionFromAllRooms_RemovesSession() {
         when(redisTemplate.opsForSet()).thenReturn(setOperations);
+        when(redisTemplate.opsForHash()).thenReturn(hashOperations);
         when(setOperations.members(RedisKey.ROOM_SESSION_ROOMS.with("session-1"))).thenReturn(Set.of("ROOM0001"));
         when(setOperations.size(roomSessionsKey("ROOM0001"))).thenReturn(0L);
+        when(hashOperations.get(RedisKey.roomSessionActors("ROOM0001"), "session-1")).thenReturn("guest:abc");
+        when(hashOperations.values(RedisKey.roomSessionActors("ROOM0001"))).thenReturn(List.of());
 
         var result = chatRoomService.unregisterSessionFromAllRooms("session-1");
 
         verify(setOperations).remove(roomSessionsKey("ROOM0001"), "session-1");
+        verify(setOperations).remove(RedisKey.roomGuests("ROOM0001"), "guest:abc");
         verify(redisTemplate).delete(RedisKey.ROOM_SESSION_ROOMS.with("session-1"));
         assertEquals(0L, result.get("ROOM0001"));
     }

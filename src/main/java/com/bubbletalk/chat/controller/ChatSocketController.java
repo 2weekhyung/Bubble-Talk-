@@ -64,6 +64,33 @@ public class ChatSocketController {
         messagingTemplate.convertAndSend("/topic/rooms/" + roomCode + "/user-count", currentCount);
     }
 
+    @MessageMapping("/rooms/{roomCode}/join")
+    public void joinRoom(@DestinationVariable String roomCode, SimpMessageHeaderAccessor headerAccessor) {
+        long currentCount = chatRoomService.registerSession(
+                roomCode,
+                headerAccessor.getSessionId(),
+                getRequesterId(headerAccessor)
+        );
+        messagingTemplate.convertAndSend("/topic/rooms/" + roomCode + "/user-count", currentCount);
+    }
+
+    @MessageMapping("/rooms/{roomCode}/leave")
+    public void leaveRoom(@DestinationVariable String roomCode, SimpMessageHeaderAccessor headerAccessor) {
+        long currentCount = chatRoomService.unregisterSession(roomCode, headerAccessor.getSessionId());
+        messagingTemplate.convertAndSend("/topic/rooms/" + roomCode + "/user-count", currentCount);
+    }
+
+    private String getRequesterId(SimpMessageHeaderAccessor headerAccessor) {
+        String clientId = headerAccessor.getFirstNativeHeader("clientId");
+        var sessionAttributes = headerAccessor.getSessionAttributes();
+        String clientIp = sessionAttributes != null ? (String) sessionAttributes.get("client-ip") : null;
+        String guestId = sessionAttributes != null ? (String) sessionAttributes.get("guest-id") : null;
+        if (clientIp == null) {
+            clientIp = headerAccessor.getSessionId();
+        }
+        return getRequesterId(guestId, clientId, clientIp);
+    }
+
     private String getRequesterId(String guestId, String clientId, String clientIp) {
         if (guestId != null && !guestId.isBlank()) {
             return "guest:" + guestId;

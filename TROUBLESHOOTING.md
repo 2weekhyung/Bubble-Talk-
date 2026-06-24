@@ -414,4 +414,263 @@
 - **가치**: "기술적 구현을 넘어, 어떻게 하면 사용자가 서비스에 더 몰입하고 재미를 느낄 수 있을까?"에 대한 UX적 고민을 실무 레벨에서 풀어냄.
 
 ---
+
+## 📅 2026-06-24: 비회원 식별·동시성·채팅방 도메인 안정화
+
+### 41. GuestID 기반 익명 사용자 식별 구조 개선
+- **문제**:
+    - IP만으로 사용자를 구분하면 회사·학교·공용 네트워크처럼 여러 사용자가 하나의 공인 IP를 공유할 때 서로 같은 사용자로 오인될 수 있음.
+    - 반대로 모바일 네트워크 전환이나 프록시 사용으로 IP가 바뀌면 동일 사용자가 새로운 사용자처럼 인식되는 문제가 있음.
+    - 브라우저의 `sessionStorage` 기반 `clientId`는 탭 종료 시 사라지고 클라이언트가 임의 변경할 수 있어 핵심 식별자로 사용하기 어려움.
+- **해결**:
+    - 서버가 UUID 기반 `BT_GUEST_ID` 쿠키를 발급하도록 `GuestIdSupport`를 도입.
+    - 쿠키에 30일 만료, `HttpOnly`, `SameSite=Lax`를 적용하고 운영 환경에서 `Secure` 옵션을 활성화할 수 있도록 설정화.
+    - 사용자 식별 우선순위를 `guestId → clientId → IP`로 통일.
+    - 기존 `sessionStorage clientId`는 이전 클라이언트와의 호환을 위해 보조 식별자로 유지하고, IP도 운영 로그와 fallback 용도로 유지.
+- **검증**:
+    - 메인 페이지 최초 요청 시 UUID 형식의 `BT_GUEST_ID` 쿠키 발급 확인.
+    - 메뉴·채팅·채팅방 요청에서 GuestID가 최우선으로 사용되고, 쿠키가 없을 때 clientId와 IP로 순차 fallback되는 구조 확인.
+- **결과**: 로그인이나 사용자 테이블 없이도 브라우저 단위의 지속적인 익명 사용자 식별 기반을 확보.
+- **적용 파일**: `GuestIdSupport.java`, `MainController.java`, `MenuRestController.java`, `ChatSocketController.java`, `IpHandshakeInterceptor.java`, `application.yml`, `main.js`
+
+### 42. 투표 중복 방지 Redis SADD 원자성 개선
+- **문제**:
+    - 기존 `SISMEMBER → ZINCRBY → SADD` 방식은 중복 여부 확인과 투표자 등록이 분리되어 있었음.
+    - 동일 사용자가 동시에 여러 요청을 보내면 각 요청이 모두 “미투표”로 판단하여 점수가 중복 증가할 수 있는 경쟁 조건이 존재.
+- **원인**: 중복 확인과 최초 투표자 등록이 하나의 원자적 연산으로 묶이지 않은 Check-Then-Act 구조.
+- **해결**:
+    - Redis Set의 `SADD` 반환값을 최초 투표 여부의 기준으로 변경.
+    - `SADD = 1`인 최초 요청에서만 ZSet의 랭킹 점수를 증가.
+    - `SADD = 0`이면 이미 투표한 사용자로 처리하고 점수를 변경하지 않음.
+    - Redis 응답이 `null`인 비정상 상황에서는 점수를 증가시키지 않고 명확한 예외를 반환.
+- **검증**:
+    - 동일 투표자에 대한 연속·동시 요청을 모킹하여 `SADD`는 여러 번 호출되더라도 `incrementScore`는 최초 한 번만 실행되는 테스트 통과.
+- **결과**: 별도 사용자 테이블이나 DB Lock 없이 Redis 단일 명령의 원자성을 활용해 중복 득표 가능성을 차단.
+- **적용 파일**: `MenuService.java`, `MenuServiceTest.java`, `RedisKey.java`
+
+### 43. 익명 메뉴 추가·채팅 입력에 대한 서버 측 방어 강화
+- **문제**:
+    - 익명 사용자가 메뉴 추가 API를 반복 호출하거나 공백·과도하게 긴 문자열·HTML/script 형태의 입력을 보낼 수 있음.
+    - 프론트엔드 검증만으로는 API 직접 호출을 차단할 수 없으며, 채팅도 동일 메시지 반복과 단시간 연속 요청에 취약함.
+- **해결**:
+    - 메뉴 추가 요청자를 `guestId → clientId → IP` 순서로 식별하고 Redis `SETNX + TTL`로 요청자별 30초에 1회만 허용.
+    - 메뉴명에 대해 null, blank, trim, 최대 20자, HTML/script 위험 문자 검증을 서버에서 수행.
+    - 채팅 메시지에 대해 null, blank, trim, 최대 200자, HTML/script 위험 문자 검증을 서버에서 수행.
+    - 기존 금칙어 필터와 채팅 rate limit을 유지하면서 제한 키의 주체를 GuestID 우선으로 변경.
+    - 프론트 출력은 `textContent`, `innerText`, HTML escape 처리를 사용하도록 점검.
+- **검증**:
+    - 메뉴 추가 rate limit, 잘못된 메뉴명 차단, 채팅 공백·길이·위험 입력 차단, 동일 메시지 반복 및 과다 전송 차단 테스트 통과.
+- **결과**: 클라이언트를 신뢰하지 않는 서버 중심 입력 검증과 익명 어뷰징 방어 체계를 확보.
+- **적용 파일**: `MenuService.java`, `MenuRestController.java`, `ChatService.java`, `main.js`, `MenuServiceTest.java`, `ChatServiceTest.java`
+
+### 44. WebSocket 접속자 수 카운터 불일치와 Redis Set 기반 세션 관리
+- **문제**:
+    - 전역 접속자 수를 Redis `INCR/DECR` 값으로만 관리하면 중복 connect/disconnect 이벤트, 비정상 종료, 재연결 상황에서 실제 세션 수와 값이 달라질 수 있음.
+    - 단순 감소 방식은 음수 보정은 가능하지만 “현재 어떤 세션이 활성 상태인지” 확인할 수 없음.
+- **해결**:
+    - 활성 WebSocket `sessionId`를 `chat:active:sessions` Redis Set에 저장.
+    - connect 시 `SADD`, disconnect 시 `SREM`을 수행하고, 접속자 수는 Set의 `SCARD` 결과로 계산.
+    - 중복 이벤트가 발생해도 동일 sessionId는 Set에 한 번만 존재하므로 접속자 수가 중복 증가하거나 감소하지 않음.
+    - 기존 `/topic/user-count` 브로드캐스트 경로는 유지하여 프론트 호환성을 보장.
+- **검증**:
+    - disconnect 이벤트 발생 시 활성 세션 Set 제거와 `/topic/user-count` 전송 여부를 단위 테스트로 확인.
+- **결과**: 카운터 값 자체가 아니라 실제 활성 세션 집합을 기준으로 접속자 수를 관리하는 구조로 개선.
+- **적용 파일**: `WebSocketEventListener.java`, `RedisKey.java`, `WebSocketEventListenerTest.java`
+
+### 45. 전역 채팅을 유지하면서 채팅방 도메인으로 점진적 확장
+- **문제**:
+    - 기존 서비스는 `/app/chat/send`, `/topic/bubbles` 기반 전역 채팅만 제공하여 사용자 그룹을 분리할 수 없음.
+    - 채팅방 기능을 한 번에 교체하면 기존 채팅·투표·메뉴 기능과 프론트 호환성이 깨질 위험이 큼.
+- **해결**:
+    - MySQL `chat_room` 테이블에는 방 코드, 이름, 설명, 공개 여부, 최대 인원, 상태, 생성·수정·종료 시각 등 영구 메타데이터만 저장.
+    - 참여자 테이블과 채팅 메시지 영구 저장 테이블은 추가하지 않고, 현재 세션과 접속자 상태는 Redis에 저장.
+    - 공개방 생성·목록 조회, 비밀방 코드 입장, 상세 조회, 입장 가능 여부 확인, 나가기 API를 추가.
+    - 비밀방은 공개 목록에서 제외하되 roomCode를 알고 있으면 입장 가능하도록 설계.
+    - 방 기반 STOMP 경로 `/app/rooms/{roomCode}/chat/send`, `/topic/rooms/{roomCode}/bubbles`, `/topic/rooms/{roomCode}/user-count`를 추가.
+    - 기존 전역 채팅 경로는 제거하지 않고 roomCode가 없는 메시지는 기존 topic으로 처리.
+- **검증**:
+    - 공개방·비밀방 생성, 공개방만 목록 노출, roomCode 상세 조회, 코드 입장, 나가기, 존재하지 않는 방 예외를 로컬 MySQL·Redis 환경에서 확인.
+    - 기존 전역 경로를 코드와 Security 설정에서 유지하는 것 확인.
+- **결과**: 기존 서비스를 중단하거나 대규모로 재작성하지 않고 방 기반 실시간 참여 구조를 점진적으로 추가.
+- **적용 파일**: `chatroom/**`, `ChatSocketController.java`, `ChatService.java`, `ChatMessage.java`, `RedisKey.java`, `main.html`, `main.js`
+
+### 46. 채팅방 최대 인원 확인과 세션 등록의 원자성 문제
+- **문제**:
+    - `SCARD로 현재 인원 확인 → SADD로 세션 추가`를 별도 명령으로 실행하면, 남은 자리가 한 자리일 때 여러 요청이 동시에 검사를 통과하여 최대 인원을 초과할 수 있음.
+    - HTTP join 요청에는 WebSocket sessionId가 없으므로 HTTP 입장 검증과 실제 실시간 세션 등록을 동일하게 처리할 수도 없음.
+- **해결**:
+    - HTTP join은 방 존재 여부, CLOSED 여부, 현재 정원 상태를 확인하고 방 정보를 반환하는 역할로 제한.
+    - 실제 참가자 수 증가는 WebSocket join 또는 첫 방 메시지 처리 시 sessionId를 기준으로 수행.
+    - Redis Lua script에서 `SISMEMBER`, `SCARD`, 정원 비교, `SADD`를 하나의 원자적 연산으로 실행.
+    - 방별 상태를 다음 Redis 키로 분리:
+        - `room:{roomCode}:sessions`: 실제 인원 계산용 session Set
+        - `room:{roomCode}:guests`: 운영·확장용 익명 요청자 Set
+        - `room:{roomCode}:session-actors`: session과 요청자 매핑 Hash
+        - `room:session:rooms:{sessionId}`: disconnect 정리용 입장 방 Set
+    - disconnect와 명시적 leave 시 session-actor 매핑을 이용해 같은 GuestID의 다른 탭이 남아 있는지 확인한 후 guest Set을 정리.
+- **검증**:
+    - Redis session Set 크기가 최대 인원과 같을 때 상세 응답이 `FULL`로 계산되는 것 확인.
+    - 추가 입장 요청이 기존 BaseResDto 예외로 차단되는 것 확인.
+    - 원자 등록 성공, 정원 초과 차단, disconnect 정리, Redis 인원 조회 실패 시 0 fallback 테스트 통과.
+- **결과**: 동일 시점의 다중 입장 요청에서도 최대 인원을 초과하지 않는 실시간 세션 관리 구조 확보.
+- **적용 파일**: `ChatRoomService.java`, `ChatSocketController.java`, `WebSocketEventListener.java`, `RedisKey.java`, `ChatRoomServiceTest.java`
+
+### 47. `chat_room` 로컬 스키마 부재로 인한 방 API 500 오류
+- **문제**:
+    - 채팅방 Entity와 API 구현은 완료됐지만 로컬 MySQL `bubble_talk` 데이터베이스에 `chat_room` 테이블이 없어 방 생성·목록 API가 HTTP 500을 반환.
+- **원인**:
+    - 당시 실제 `application.yml` 기준으로 dev 프로필에는 `spring.jpa.hibernate.ddl-auto` 설정이 없었고, `update`는 prod 프로필에만 설정되어 있었음.
+    - 따라서 dev 앱 기동만으로 신규 테이블이 자동 생성되지 않음.
+- **해결**:
+    - 현재 Entity 매핑에 맞춰 로컬 DB에 `chat_room` 테이블을 생성.
+    - `room_code` UNIQUE 인덱스와 공개방 목록 조회용 `(is_private, status, created_date)` 복합 인덱스를 구성.
+- **검증**:
+    - `SHOW TABLES`, `DESC chat_room`, `SHOW INDEX FROM chat_room`으로 테이블·컬럼·인덱스 확인.
+    - 공개방/비밀방 생성 후 DB에 `is_private`, `max_participants`, `status`, 생성·수정 시각이 정상 저장되는 것 확인.
+    - 공개방 목록에서 비밀방 제외, 코드 입장, FULL 상태와 정원 초과 차단까지 로컬 환경에서 확인.
+- **주의사항**:
+    - `BaseEntity`의 실제 컬럼명은 현재 `created_date`, `modified_date`이며 `created_at`, `updated_at`이 아님.
+    - dev 프로필의 자동 DDL 정책과 prod 프로필의 `ddl-auto: update` 사용 여부는 배포 전 별도로 정리할 필요가 있음.
+- **결과**: 로컬 환경에서 채팅방 도메인의 DB–JPA–REST–Redis 연동 정상 동작 확인.
+- **적용 파일**: `ChatRoom.java`, `BaseEntity.java`, `ChatRoomRepository.java`, `application.yml`, `database_schema.txt`
+
+### 48. 메뉴 추가·투표 API가 `/login`으로 302 리다이렉트되는 문제
+- **문제**:
+    - 로그인 없이 사용해야 하는 `POST /api/menu/add`, `POST /api/menu/vote` 요청이 정상 JSON 응답 대신 `/login`으로 302 리다이렉트됨.
+- **영향**:
+    - 로그인·회원가입이 없는 BubbleTalk에서 핵심 참여 기능인 메뉴 추가와 투표를 익명 사용자가 이용할 수 없었음.
+- **원인**:
+    - 두 API는 `authorizeHttpRequests`에서 이미 `permitAll`이므로 인증 required 문제는 아니었음.
+    - Spring Security CSRF 예외에는 `/ws-bubble/**`, `/api/rooms/**`만 등록되어 있어 CSRF 토큰 없는 메뉴·투표 POST가 차단됨.
+    - 폼 로그인 기반 Security 설정의 인증 진입점 때문에 클라이언트에서는 로그인 리다이렉트로 관찰됨.
+- **해결**:
+    - CSRF 전체 비활성화는 하지 않고 익명 서비스에 필요한 두 경로만 `ignoringRequestMatchers`에 추가.
+    - 관리자 경로 `/admin/**`, `/api/admin/**`, `/api/menu/admin/**`의 `ROLE_ADMIN` 정책과 CSRF 보호는 유지.
+- **검증**:
+    - 운영 상태가 CLOSED일 때 메뉴 추가 요청이 `/login`이 아닌 기존 운영시간 인터셉터의 JSON 403 응답까지 도달하는 것 확인.
+    - 이벤트 상태를 임시 OPEN으로 변경한 뒤 `POST /api/menu/add`와 `POST /api/menu/vote`가 각각 HTTP 200 BaseResDto를 반환하고 랭킹 점수가 0에서 1로 증가하는 것 확인.
+    - `GET /api/menu/rankings`가 HTTP 200을 반환하는 것 확인.
+    - 익명 `POST /api/menu/admin/status` 요청은 기존과 동일하게 `/login`으로 리다이렉트되고, 관리자 로그인과 CSRF 토큰이 있는 요청만 성공하는 것 확인.
+    - 채팅방 API, GuestID 쿠키, `/ws-bubble/info` 응답이 기존처럼 정상 동작하는 것 확인.
+    - `compileJava`, `test` 성공.
+- **배운 점**:
+    - `permitAll`은 인증·인가 규칙이며 CSRF 검증 통과를 의미하지 않는다. 익명 허용 여부와 CSRF 예외 범위를 별도로 설계해야 한다.
+    - 로그인 없는 서비스에서도 Spring Security 필터 설정 하나가 일반 사용자 POST API 전체의 회귀를 만들 수 있다.
+    - 보안 설정 변경 후에는 수정 대상뿐 아니라 메뉴·투표·채팅방·관리자 보호 등 기존 핵심 경로를 함께 회귀 테스트해야 한다.
+- **결과**: 일반 사용자의 익명 메뉴·투표 기능을 복구하면서 관리자 인증과 CSRF 보호 범위는 유지.
+- **적용 파일**: `SecurityConfig.java`
+
+### 49. roomCode DB unique 충돌 재시도 처리
+- **문제**:
+    - 대문자와 숫자로 구성한 8자리 랜덤 roomCode는 충돌 확률이 낮지만 0은 아님.
+    - 생성 전 `existsByRoomCode` 확인만으로는 확인 직후 다른 요청이 같은 코드를 저장하는 경쟁 조건을 완전히 막을 수 없음.
+- **해결**:
+    - `chat_room.room_code`의 DB UNIQUE 제약을 최종 정합성 보장 수단으로 유지.
+    - 저장 시 `DataIntegrityViolationException`이 발생하면 새로운 roomCode를 생성해 최대 10회 재시도.
+    - 충돌로 실패한 트랜잭션 상태가 다음 저장에 영향을 주지 않도록 room 생성 저장을 바깥 트랜잭션 없이 독립적으로 실행.
+- **검증**:
+    - 첫 `saveAndFlush`에서 UNIQUE 충돌 예외를 발생시키고 두 번째 저장이 성공하는 단위 테스트 통과.
+    - 저장 메서드가 두 번 호출되고 최종 방 생성 응답이 반환되는 것 확인.
+- **결과**: 애플리케이션의 사전 중복 확인에 의존하지 않고 DB UNIQUE 제약과 제한된 재시도를 결합해 roomCode 충돌을 안전하게 처리.
+- **적용 파일**: `ChatRoom.java`, `ChatRoomRepository.java`, `ChatRoomService.java`, `ChatRoomServiceTest.java`
+
+### 50. 최종 회귀 검증
+- **자동 검증**:
+    - `./gradlew.bat compileJava` 성공.
+    - `./gradlew.bat test` 성공.
+    - 총 33개 테스트, 실패 0, 오류 0.
+- **수동 검증**:
+    - GuestID 쿠키 발급, 메뉴 추가·투표·랭킹 조회, 공개방·비밀방 생성과 목록 정책, roomCode 입장, FULL 상태, WebSocket SockJS endpoint, 관리자 보호 정책 확인.
+- **남은 운영 과제**:
+    - dev/prod의 DB 이름(`bubble_talk`/`bubbletalk`)과 DDL 정책을 배포 환경에 맞게 명확히 분리.
+    - prod에서는 `ddl-auto: update` 대신 Flyway/Liquibase와 `validate` 조합 검토.
+    - 실제 브라우저 다중 탭 환경에서 STOMP reconnect와 disconnect 후 Redis stale session 정리 시나리오 추가 검증.
+    - 전역 WebSocket 채팅의 실제 브라우저 송수신은 자동화 환경 제한으로 미검증이므로 별도 브라우저 수동 검증 필요.
+
+## 📅 2026-06-24: 어드민 대시보드 1차 고도화
+
+### 51. 사용자용 Top 10 랭킹을 관리자 전체 통계로 사용한 문제
+- **문제**:
+    - 관리자 화면의 활성 메뉴 수와 총 투표 수가 `GET /api/menu/rankings` 결과로 계산되고 있었음.
+    - 해당 API는 사용자 화면을 위한 상위 10개 메뉴만 반환하므로 메뉴가 10개를 초과하면 실제 전체 메뉴 수와 전체 투표 수보다 작게 표시됨.
+- **해결**:
+    - 관리자 전용 `GET /api/admin/dashboard/summary` API를 추가.
+    - `todayMenuCount`는 당일 `lunch:ranking:{yyyyMMdd}` ZSet의 `ZCARD`로 계산.
+    - `todayVoteCount`는 동일 ZSet의 전체 member score를 조회해 합산.
+    - 사용자용 랭킹 API와 관리자용 운영 통계의 책임을 분리.
+- **검증**:
+    - ZSet cardinality가 14일 때 `todayMenuCount=14`를 반환하는 단위 테스트 통과.
+    - 전체 score 3, 7, 2를 `todayVoteCount=12`로 합산하는 단위 테스트 통과.
+- **결과**: 관리자 화면의 “전체” 지표와 실제 Redis 집계 범위를 일치시킴.
+- **적용 파일**: `AdminDashboardService.java`, `AdminDashboardSummaryResDto.java`, `AdminDashBoardRestController.java`, `MenuService.java`, `MenuServiceTest.java`
+
+### 52. 최신 채팅방 도메인이 관리자 화면에 보이지 않는 문제
+- **문제**:
+    - `chat_room`과 방별 Redis session 구조가 도입됐지만 관리자 화면에서는 공개방·비밀방, 상태, 현재 인원을 확인할 수 없었음.
+    - 일반 사용자용 `GET /api/rooms`는 비밀방과 CLOSED 방을 제외하므로 관리자 운영 조회에 사용할 수 없음.
+- **해결**:
+    - `GET /api/admin/rooms`를 추가하여 공개방·비밀방과 OPEN·FULL·CLOSED 방을 최신 생성순으로 모두 반환.
+    - 관리자 방 응답에 roomCode, 이름, 공개 여부, 상태, 현재 인원/최대 인원, 생성·종료 시각을 포함.
+    - `currentParticipants`는 `room:{roomCode}:sessions` Redis Set의 `SCARD` 기준으로 계산하고 Redis 조회 실패 시 0으로 fallback.
+    - 대시보드에 전체·공개·비밀 방 수, OPEN·FULL·CLOSED 상태 요약과 방 목록 테이블을 추가.
+- **검증**:
+    - 관리자 목록에 비밀방과 CLOSED 방이 포함되는 단위 테스트 통과.
+    - 관리자 로그인 후 `/api/admin/rooms`가 비밀방을 포함한 전체 방을 HTTP 200으로 반환하는 것 확인.
+- **결과**: 관리자 화면에서 MySQL 영구 방 정보와 Redis 실시간 인원을 함께 확인할 수 있게 됨.
+- **적용 파일**: `AdminChatRoomResDto.java`, `ChatRoomRepository.java`, `ChatRoomService.java`, `dashboard.html`, `admin.js`, `ChatRoomServiceTest.java`
+
+### 53. 관리자 WebSocket 중복 연결과 채팅 모니터 정합성 문제
+- **문제**:
+    - `connectStatsSocket()`과 `connectChatSocket()`이 각각 SockJS/STOMP 연결을 생성하여 관리자 페이지 한 개가 활성 session 수를 두 개 이상 증가시킬 수 있었음.
+    - 공통 레이아웃이 `main.js`를 함께 로드하므로 관리자 페이지에서도 메인 WebSocket 연결이 추가 생성될 가능성이 있었음.
+    - 관리자 채팅 모니터는 실제 발행되지 않는 `/topic/chat`을 구독하고 `msg.message`를 읽었지만, 전역 채팅의 실제 topic은 `/topic/bubbles`, 메시지 필드는 `content`였음.
+- **해결**:
+    - 관리자 WebSocket 연결을 하나로 통합하고 동일 연결에서 `/topic/user-count`, `/topic/bubbles`를 구독.
+    - `main.js`는 메인 화면 DOM인 `#bamboo-forest`가 존재할 때만 초기화하도록 가드 추가.
+    - 채팅 내용은 `msg.content`를 사용하고 식별 정보는 `senderGuestId → senderClientId → senderIp` 순서로 표시.
+    - roomCode가 없는 전역 메시지는 `전역`으로 표시.
+    - 메시지 출력은 `textContent`를 사용하여 관리자 모니터에서도 사용자 입력을 HTML로 해석하지 않도록 처리.
+- **검증**:
+    - `admin.js`에서 SockJS 생성이 한 번만 존재하고 두 topic이 동일 STOMP client에서 구독되는 것 확인.
+    - `admin.js`, `main.js`의 JavaScript 문법 검사 통과.
+    - SockJS `/ws-bubble/info` HTTP 200 확인.
+- **결과**: 관리자 접속으로 인한 session 수 왜곡 가능성을 줄이고 전역 채팅 모니터의 topic·필드 불일치를 해결.
+- **제한**: 방별 `/topic/rooms/{roomCode}/bubbles` 구독은 이번 단계에서 구현하지 않음.
+- **적용 파일**: `admin.js`, `main.js`, `dashboard.html`
+
+### 54. 관리자 Summary의 Redis 가용성 및 활성 Guest 표현
+- **구현**:
+    - Summary API에서 `activeSessions`는 `chat:active:sessions` Set 크기로 계산.
+    - Redis 조회가 실패하면 `redisAvailable=false`로 표시하고 session·메뉴·투표 수는 안전한 기본값 0으로 반환.
+    - 방 목록은 방별 Redis 조회가 실패해도 현재 인원을 0으로 fallback하여 관리자 화면 전체가 깨지지 않도록 처리.
+- **activeGuests 정책**:
+    - 현재 구조에는 모든 방과 전역 접속을 포괄하는 전역 GuestID Set이 없음.
+    - 따라서 활성 Guest 수를 정확하게 계산할 수 없으므로 추정값을 만들지 않고 `activeGuests=null`로 반환.
+- **검증**:
+    - Redis 정상 상태의 session·메뉴·투표 집계 테스트 통과.
+    - Redis 예외 발생 시 `redisAvailable=false`와 기본값 반환 테스트 통과.
+- **향후 개선**: 전역 GuestID Set을 별도로 설계한 후에만 정확한 활성 Guest 수 제공.
+- **적용 파일**: `AdminDashboardService.java`, `AdminDashboardSummaryResDto.java`, `AdminDashboardServiceTest.java`
+
+### 55. 관리자 API 보호와 최종 회귀 검증
+- **보안**:
+    - 신규 `/api/admin/dashboard/summary`, `/api/admin/rooms`는 기존 `/api/admin/**` 규칙에 포함되어 `ROLE_ADMIN`으로 보호.
+    - `/admin/**`, `/api/menu/admin/**`의 기존 보호 정책 유지.
+    - 익명 요청은 `/login`으로 리다이렉트되고 관리자 로그인 후에만 HTTP 200 응답 확인.
+    - 일반 사용자용 메뉴·투표 CSRF 예외와 익명 채팅방 API 정책은 변경하지 않음.
+- **자동 검증**:
+    - `./gradlew.bat compileJava` 성공.
+    - `./gradlew.bat test` 성공.
+    - 총 38개 테스트, 실패 0, 오류 0.
+- **수동 검증**:
+    - 관리자 Summary와 전체 방 목록 HTTP 200.
+    - 공개방·비밀방 수와 방별 현재 인원 응답 확인.
+    - 일반 메뉴 랭킹, 메뉴 추가 운영시간 차단 JSON, SockJS endpoint 정상 확인.
+- **미구현·향후 개선**:
+    - 전역 GuestID Set 기반 `activeGuests` 계산.
+    - 운영 이벤트 로그 및 관리자 감사 로그.
+    - 방별 topic 채팅 모니터링.
+    - 실제 브라우저 다중 탭 reconnect와 stale session 정리 검증.
+
+---
 *(이후 작업 내용에 따라 지속적으로 업데이트 예정)*

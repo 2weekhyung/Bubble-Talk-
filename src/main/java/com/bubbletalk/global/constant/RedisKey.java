@@ -35,6 +35,8 @@ public enum RedisKey {
      */
     CHAT_USER_COUNT("chat:user:count"),
 
+    CHAT_ACTIVE_SESSIONS("chat:active:sessions"),
+
     ROOM("room:"),
 
     ROOM_SESSION_ROOMS("room:session:rooms:"),
@@ -78,5 +80,21 @@ public enum RedisKey {
      */
     public String with(Object suffix) {
         return this.prefix + suffix.toString();
+    }
+
+    public static String roomSessions(String roomCode) {
+        return ROOM.with(roomCode + ":sessions");
+    }
+
+    public static String roomGuests(String roomCode) {
+        return ROOM.with(roomCode + ":guests");
+    }
+
+    public static String roomSessionActors(String roomCode) {
+        return ROOM.with(roomCode + ":session-actors");
+    }
+
+    public static String sessionRooms(String sessionId) {
+        return ROOM_SESSION_ROOMS.with(sessionId);
     }
 }
