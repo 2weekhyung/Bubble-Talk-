@@ -12,6 +12,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.ArgumentCaptor;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -22,6 +23,8 @@ import org.springframework.data.redis.core.script.RedisScript;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.time.LocalDateTime;
+import java.util.Collection;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -181,6 +184,66 @@ class ChatRoomServiceTest {
         when(chatRoomRepository.findByRoomCode("CLOSED01")).thenReturn(Optional.of(room));
 
         assertThrows(BusinessException.class, () -> chatRoomService.joinRoom("CLOSED01", "guest:abc"));
+    }
+
+    @Test
+    @DisplayName("admin close marks room closed, records closedAt, and clears room Redis keys")
+    void closeRoom_ClosesRoomAndCleansRedis() {
+        ChatRoom room = room("ROOM0001", "방", false, 10);
+        when(chatRoomRepository.findByRoomCode("ROOM0001")).thenReturn(Optional.of(room));
+        when(chatRoomRepository.saveAndFlush(room)).thenReturn(room);
+        when(redisTemplate.opsForSet()).thenReturn(setOperations);
+        when(setOperations.members(RedisKey.roomSessions("ROOM0001")))
+                .thenReturn(Set.of("session-1", "session-2"));
+        when(setOperations.size(RedisKey.roomSessions("ROOM0001"))).thenReturn(0L);
+
+        var result = chatRoomService.closeRoom("ROOM0001");
+
+        assertEquals(RoomStatus.CLOSED, room.getStatus());
+        assertTrue(room.getClosedAt() != null);
+        assertEquals(RoomStatus.CLOSED, result.getStatus());
+        verify(setOperations).remove(RedisKey.sessionRooms("session-1"), "ROOM0001");
+        verify(setOperations).remove(RedisKey.sessionRooms("session-2"), "ROOM0001");
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Collection<String>> keysCaptor = ArgumentCaptor.forClass(Collection.class);
+        verify(redisTemplate).delete(keysCaptor.capture());
+        assertTrue(keysCaptor.getValue().contains(RedisKey.roomSessions("ROOM0001")));
+        assertTrue(keysCaptor.getValue().contains(RedisKey.roomGuests("ROOM0001")));
+        assertTrue(keysCaptor.getValue().contains(RedisKey.roomSessionActors("ROOM0001")));
+    }
+
+    @Test
+    @DisplayName("closing an already closed room is idempotent")
+    void closeRoom_AlreadyClosedIsSafe() {
+        ChatRoom room = room("CLOSED01", "닫힌방", false, 10);
+        LocalDateTime closedAt = LocalDateTime.now().minusMinutes(1);
+        org.springframework.test.util.ReflectionTestUtils.setField(room, "status", RoomStatus.CLOSED);
+        org.springframework.test.util.ReflectionTestUtils.setField(room, "closedAt", closedAt);
+        when(chatRoomRepository.findByRoomCode("CLOSED01")).thenReturn(Optional.of(room));
+        when(chatRoomRepository.saveAndFlush(room)).thenReturn(room);
+        when(redisTemplate.opsForSet()).thenReturn(setOperations);
+        when(setOperations.members(RedisKey.roomSessions("CLOSED01"))).thenReturn(Set.of());
+        when(setOperations.size(RedisKey.roomSessions("CLOSED01"))).thenReturn(0L);
+
+        chatRoomService.closeRoom("CLOSED01");
+
+        assertEquals(closedAt, room.getClosedAt());
+        assertEquals(RoomStatus.CLOSED, room.getStatus());
+    }
+
+    @Test
+    @DisplayName("room remains closed when Redis cleanup fails")
+    void closeRoom_RedisFailureDoesNotRollbackClosedState() {
+        ChatRoom room = room("ROOM0001", "방", false, 10);
+        when(chatRoomRepository.findByRoomCode("ROOM0001")).thenReturn(Optional.of(room));
+        when(chatRoomRepository.saveAndFlush(room)).thenReturn(room);
+        when(redisTemplate.opsForSet()).thenThrow(new IllegalStateException("redis unavailable"));
+
+        var result = chatRoomService.closeRoom("ROOM0001");
+
+        assertEquals(RoomStatus.CLOSED, room.getStatus());
+        assertTrue(room.getClosedAt() != null);
+        assertEquals(RoomStatus.CLOSED, result.getStatus());
     }
 
     @Test

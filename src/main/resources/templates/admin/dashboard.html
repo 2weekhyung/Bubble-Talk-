@@ -22,6 +22,9 @@
                 <button onclick="ADMIN.refreshAllCache()" class="px-4 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs font-bold hover:bg-slate-700 transition-all">
                     <i class="fa-solid fa-sync mr-1"></i> 전체 캐시 갱신
                 </button>
+                <button onclick="ADMIN.cleanupStaleSessions()" class="px-4 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs font-bold hover:bg-slate-700 transition-all">
+                    <i class="fa-solid fa-broom mr-1"></i> Stale Session 정리
+                </button>
             </div>
         </div>
 
@@ -233,6 +236,7 @@
                             <th class="pb-3 px-2">현재/최대</th>
                             <th class="pb-3 px-2">생성 시각</th>
                             <th class="pb-3 px-2">종료 시각</th>
+                            <th class="pb-3 px-2">관리</th>
                         </tr>
                     </thead>
                     <tbody id="admin-room-list" class="divide-y divide-slate-800/50">

@@ -20,6 +20,7 @@ public class WebSocketEventListener {
     private final RedisTemplate<String, Object> redisTemplate;
     private final SimpMessageSendingOperations messagingTemplate;
     private final ChatRoomService chatRoomService;
+    private final ActiveWebSocketSessionRegistry activeSessionRegistry;
 
     @EventListener
     public void handleWebSocketConnectListener(SessionConnectEvent event) {
@@ -42,6 +43,7 @@ public class WebSocketEventListener {
             log.warn("websocket connect event without sessionId");
             return;
         }
+        activeSessionRegistry.register(sessionId);
         redisTemplate.opsForSet().add(RedisKey.CHAT_ACTIVE_SESSIONS.getPrefix(), sessionId);
         broadcastActiveSessionCount();
     }
@@ -50,6 +52,7 @@ public class WebSocketEventListener {
         if (sessionId == null || sessionId.isBlank()) {
             return;
         }
+        activeSessionRegistry.unregister(sessionId);
         redisTemplate.opsForSet().remove(RedisKey.CHAT_ACTIVE_SESSIONS.getPrefix(), sessionId);
         broadcastActiveSessionCount();
     }

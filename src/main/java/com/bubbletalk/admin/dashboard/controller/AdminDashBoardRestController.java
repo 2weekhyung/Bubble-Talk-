@@ -21,6 +21,7 @@ public class AdminDashBoardRestController {
     private final MenuService menuService;
     private final com.bubbletalk.menu.controller.MenuSocketController socketController;
     private final AdminDashboardService adminDashboardService;
+    private final com.bubbletalk.admin.dashboard.service.RealtimeSessionCleanupService realtimeSessionCleanupService;
 
     @GetMapping("/dashboard/summary")
     public ResponseEntity<BaseResDto> getDashboardSummary() {
@@ -30,6 +31,16 @@ public class AdminDashBoardRestController {
     @GetMapping("/rooms")
     public ResponseEntity<BaseResDto> getRooms() {
         return ResponseEntity.ok(BaseResDto.ok(adminDashboardService.getRooms()));
+    }
+
+    @PostMapping("/rooms/{roomCode}/close")
+    public ResponseEntity<BaseResDto> closeRoom(@PathVariable String roomCode) {
+        return ResponseEntity.ok(BaseResDto.ok(adminDashboardService.closeRoom(roomCode)));
+    }
+
+    @PostMapping("/realtime/cleanup-stale-sessions")
+    public ResponseEntity<BaseResDto> cleanupStaleSessions() {
+        return ResponseEntity.ok(BaseResDto.ok(realtimeSessionCleanupService.cleanupStaleSessions()));
     }
 
     /**

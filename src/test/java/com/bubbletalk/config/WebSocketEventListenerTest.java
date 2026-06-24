@@ -32,6 +32,9 @@ class WebSocketEventListenerTest {
     private ChatRoomService chatRoomService;
 
     @Mock
+    private ActiveWebSocketSessionRegistry activeSessionRegistry;
+
+    @Mock
     private SessionDisconnectEvent disconnectEvent;
 
     @Test
@@ -42,9 +45,15 @@ class WebSocketEventListenerTest {
         when(setOperations.size(RedisKey.CHAT_ACTIVE_SESSIONS.getPrefix())).thenReturn(2L);
 
         WebSocketEventListener listener =
-                new WebSocketEventListener(redisTemplate, messagingTemplate, chatRoomService);
+                new WebSocketEventListener(
+                        redisTemplate,
+                        messagingTemplate,
+                        chatRoomService,
+                        activeSessionRegistry
+                );
         listener.handleWebSocketDisconnectListener(disconnectEvent);
 
+        verify(activeSessionRegistry).unregister("session-1");
         verify(setOperations).remove(RedisKey.CHAT_ACTIVE_SESSIONS.getPrefix(), "session-1");
         verify(messagingTemplate).convertAndSend("/topic/user-count", 2L);
     }

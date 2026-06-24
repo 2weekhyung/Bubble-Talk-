@@ -177,3 +177,60 @@ roomCode가 없으면 전역 메시지로 표시한다.
 - 운영 이벤트 로그 테이블
 - 관리자 감사 로그 테이블
 - 방별 `/topic/rooms/{roomCode}/bubbles` 모니터링
+
+---
+
+## 7. 관리자 운영 안정화 데이터 처리
+
+### 7.1 방 종료
+
+`POST /api/admin/rooms/{roomCode}/close`
+
+1. MySQL `chat_room.status`를 `CLOSED`로 변경한다.
+2. 최초 종료 시 `closed_at`을 기록한다.
+3. DB 변경을 flush한 뒤 Redis 실시간 상태 정리를 시도한다.
+4. Redis 정리가 실패해도 DB의 CLOSED 상태는 유지한다.
+
+Redis 정리 대상:
+
+- `room:{roomCode}:sessions`
+- `room:{roomCode}:guests`
+- `room:{roomCode}:session-actors`
+
+방 session Set의 각 sessionId에 대해서는
+`room:session:rooms:{sessionId}`에서 종료한 roomCode만 제거한다. 전역 활성
+session과 다른 방의 reverse mapping은 유지한다.
+
+### 7.2 Stale session 수동 정리
+
+`POST /api/admin/realtime/cleanup-stale-sessions`
+
+현재 서버는 메모리 `ActiveWebSocketSessionRegistry`에 실제 connect된
+sessionId를 추적한다. 관리자 cleanup은 다음 Redis 정보를 검사한다.
+
+- `chat:active:sessions`
+- `room:*:sessions`
+
+Redis session 합집합 중 현재 서버 registry에 없는 session만 stale로
+판단하고 전역·방별 session 상태와 reverse mapping을 제거한다.
+
+응답:
+
+| 필드 | 설명 |
+| :--- | :--- |
+| `scannedSessions` | 검사한 고유 session 수 |
+| `removedSessions` | 제거한 stale session 수 |
+| `scannedRooms` | 검사한 방 session Set 수 |
+| `affectedRooms` | 정리로 영향을 받은 방 수 |
+| `message` | 처리 결과 또는 Redis 오류 설명 |
+
+Redis 접근 실패 시 제거 수 0과 오류 메시지를 반환하며 자동 스케줄 정리는
+수행하지 않는다.
+
+### 7.3 적용 범위 제한
+
+- 현재 session registry는 단일 애플리케이션 인스턴스 기준이다.
+- 다중 인스턴스에서는 공유 registry 또는 인스턴스별 session 소유권 키가 필요하다.
+- 운영 이벤트·감사 로그 테이블은 추가하지 않았다.
+- rate limit·중복 투표 차단 횟수 통계는 추가하지 않았다.
+- 방별 채팅 topic 모니터링은 추가하지 않았다.

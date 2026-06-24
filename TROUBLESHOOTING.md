@@ -672,5 +672,78 @@
     - 방별 topic 채팅 모니터링.
     - 실제 브라우저 다중 탭 reconnect와 stale session 정리 검증.
 
+## 📅 2026-06-24: 어드민 2차 운영 안정화
+
+### 56. 운영자가 비정상 채팅방을 종료할 수 없는 문제
+- **문제**:
+    - 생성된 방을 운영자가 강제로 종료할 API가 없어 비정상 상태 또는 운영이 끝난 방을 정리할 수 없었음.
+    - DB 방 상태와 Redis 실시간 session 상태를 함께 정리할 운영 경로가 필요했음.
+- **해결**:
+    - `POST /api/admin/rooms/{roomCode}/close` 관리자 API 추가.
+    - 방 상태를 `CLOSED`로 변경하고 최초 종료 시 `closedAt` 기록.
+    - 이미 CLOSED인 방에 다시 종료 요청해도 기존 `closedAt`을 유지하며 정상 응답하는 멱등 처리.
+    - 종료된 방은 기존 공개방 조회 조건에서 제외되고 기존 입장 검증에서 차단.
+- **Redis 정리**:
+    - `room:{roomCode}:sessions`의 sessionId를 조회.
+    - 각 `room:session:rooms:{sessionId}` Set에서 종료한 roomCode만 제거.
+    - `room:{roomCode}:sessions`, `room:{roomCode}:guests`, `room:{roomCode}:session-actors` 삭제.
+    - 전역 활성 session과 다른 roomCode 정보는 삭제하지 않음.
+    - Redis 정리 실패는 경고 로그로 남기며 DB의 CLOSED 상태는 유지.
+- **검증**:
+    - 상태 CLOSED 변경과 `closedAt` 기록 테스트 통과.
+    - 반복 종료 시 `closedAt` 유지 테스트 통과.
+    - Redis 정리 실패 시에도 CLOSED 상태를 반환하는 테스트 통과.
+    - 수동 검증에서 공개 목록 제외, 재입장 차단, 반복 종료 HTTP 200 확인.
+- **적용 파일**: `ChatRoom.java`, `ChatRoomService.java`, `AdminDashboardService.java`, `AdminDashBoardRestController.java`, `ChatRoomServiceTest.java`
+
+### 57. WebSocket disconnect 누락으로 남을 수 있는 stale session 수동 정리
+- **문제**:
+    - 브라우저 비정상 종료나 disconnect 이벤트 누락 시 Redis의 전역·방별 session Set에 실제로는 연결되지 않은 sessionId가 남을 수 있음.
+    - Redis 자체 정보만으로는 session이 현재 서버에 실제 연결되어 있는지 판단할 수 없음.
+- **해결**:
+    - `ActiveWebSocketSessionRegistry`를 추가하여 connect/disconnect 이벤트에서 현재 서버 메모리의 활성 sessionId를 추적.
+    - `POST /api/admin/realtime/cleanup-stale-sessions` 관리자 수동 정리 API 추가.
+    - `chat:active:sessions`와 `room:*:sessions`의 session 합집합을 검사하고 메모리 registry에 없는 session만 stale로 판단.
+    - stale session은 전역 Set, 방별 Set, session-actor Hash, guest Set, reverse room Set에서 안전하게 제거.
+    - reverse room Set에서는 해당 roomCode만 제거하여 다른 방 정보는 유지.
+- **응답**:
+    - `scannedSessions`
+    - `removedSessions`
+    - `scannedRooms`
+    - `affectedRooms`
+    - `message`
+- **오류 정책**:
+    - Redis 접근 실패 시 HTTP 처리 자체를 깨뜨리지 않고 제거 수 0과 명확한 실패 메시지를 반환.
+- **검증**:
+    - registry에 존재하는 활성 session은 유지하고 registry에 없는 session만 제거하는 테스트 통과.
+    - session이 없는 경우 안전한 빈 결과 반환 테스트 통과.
+    - Redis 장애 시 안전한 오류 메시지 반환 테스트 통과.
+    - 수동 cleanup API HTTP 200과 집계 응답 확인.
+- **제한**:
+    - 현재 simple broker와 단일 애플리케이션 인스턴스를 기준으로 한 registry임.
+    - 다중 인스턴스 환경에서는 인스턴스별 소유권 또는 공유 session registry가 필요.
+- **적용 파일**: `ActiveWebSocketSessionRegistry.java`, `WebSocketEventListener.java`, `RealtimeSessionCleanupService.java`, `StaleSessionCleanupResDto.java`, `RealtimeSessionCleanupServiceTest.java`, `WebSocketEventListenerTest.java`
+
+### 58. 관리자 운영 UI와 최종 검증
+- **UI 반영**:
+    - 관리자 방 목록에서 OPEN/FULL 방에만 종료 버튼 표시.
+    - CLOSED 방은 종료 버튼 대신 비활성 표시.
+    - 종료 전 confirm, 성공 후 Summary와 방 목록 재조회.
+    - 상단에 `Stale Session 정리` 버튼 추가.
+    - cleanup 결과의 검사 session 수와 영향받은 방 수 표시.
+- **보안**:
+    - 신규 API는 `/api/admin/**` 아래에 배치되어 기존 `ROLE_ADMIN` 보호와 CSRF 토큰 정책 유지.
+    - 익명 접근 시 `/login` 리다이렉트 확인.
+    - 일반 사용자 메뉴·투표 CSRF 예외와 채팅방 API 정책은 변경하지 않음.
+- **자동 검증**:
+    - `compileJava` 성공.
+    - `test` 성공.
+    - 총 44개 테스트, 실패 0, 오류 0.
+    - `admin.js` 문법 검사 통과.
+- **수동 검증**:
+    - 방 종료, 반복 종료, 공개 목록 제외, CLOSED 방 입장 차단 확인.
+    - room Redis key 정리와 reverse mapping의 다른 방 정보 보존 정책 확인.
+    - stale cleanup 응답과 관리자 API 보호 확인.
+
 ---
 *(이후 작업 내용에 따라 지속적으로 업데이트 예정)*

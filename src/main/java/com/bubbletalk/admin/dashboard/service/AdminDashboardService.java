@@ -60,6 +60,10 @@ public class AdminDashboardService {
         return chatRoomService.getAdminRooms();
     }
 
+    public AdminChatRoomResDto closeRoom(String roomCode) {
+        return chatRoomService.closeRoom(roomCode);
+    }
+
     private long countStatus(List<AdminChatRoomResDto> rooms, RoomStatus status) {
         return rooms.stream().filter(room -> room.getStatus() == status).count();
     }

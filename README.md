@@ -164,8 +164,14 @@ com.bubbletalk/
 - 금칙어 추가/삭제 및 Redis 캐시 갱신
 - 당일 랭킹 및 투표 이력 초기화
 - 과거 우승 메뉴 이력 조회
+- OPEN/FULL 채팅방 수동 종료
+- Redis stale WebSocket session 수동 정리
 
 관리자 API는 기존과 동일하게 `ROLE_ADMIN`으로 보호됩니다. `activeGuests`는 전역 GuestID Set이 없어 정확하게 계산할 수 없으므로 Summary 응답에서 `null`로 처리합니다.
+
+운영 안정화를 위해 관리자는 OPEN/FULL 방을 종료할 수 있습니다. 방 종료 시 MySQL 상태를 `CLOSED`로 변경하고 `closedAt`을 기록한 뒤 해당 방의 Redis session·guest·session-actor 키를 정리합니다. session의 역방향 방 목록에서는 종료한 roomCode만 제거하여 다른 방 정보는 유지합니다.
+
+수동 Stale Session 정리 기능은 현재 서버 메모리의 활성 WebSocket session registry와 Redis의 전역·방별 session Set을 비교해, 현재 서버에서 활성 상태가 아닌 session만 정리합니다. 이 방식은 현재 단일 애플리케이션 인스턴스 구조를 기준으로 합니다.
 
 ---
 
@@ -221,6 +227,7 @@ docker-compose up -d
 - 전역 GuestID Set 기반 활성 Guest 집계
 - 운영 이벤트 로그와 관리자 감사 로그
 - 방별 topic 채팅 모니터링
+- 다중 애플리케이션 인스턴스를 위한 공유 WebSocket session registry
 
 ---
 

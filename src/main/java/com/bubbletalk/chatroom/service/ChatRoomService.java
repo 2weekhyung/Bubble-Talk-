@@ -21,6 +21,7 @@ import java.security.SecureRandom;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Service
 @Slf4j
@@ -119,6 +120,22 @@ public class ChatRoomService {
         return toResponse(room);
     }
 
+    @Transactional
+    public AdminChatRoomResDto closeRoom(String roomCode) {
+        ChatRoom room = getRoomOrThrow(roomCode);
+        room.close();
+        chatRoomRepository.saveAndFlush(room);
+
+        try {
+            cleanupClosedRoomRedis(room.getRoomCode());
+        } catch (RuntimeException e) {
+            log.warn("closed room Redis cleanup failed: roomCode={}", room.getRoomCode(), e);
+        }
+
+        long currentParticipants = getCurrentParticipants(room.getRoomCode());
+        return AdminChatRoomResDto.from(room, currentParticipants, RoomStatus.CLOSED);
+    }
+
     public long registerSession(String roomCode, String sessionId, String requesterId) {
         ChatRoom room = getRoomOrThrow(roomCode);
         validateRequester(requesterId);
@@ -208,6 +225,21 @@ public class ChatRoomService {
             log.warn("room participant count fallback to zero: roomCode={}", roomCode, e);
             return 0L;
         }
+    }
+
+    private void cleanupClosedRoomRedis(String roomCode) {
+        String sessionsKey = RedisKey.roomSessions(roomCode);
+        Set<Object> sessionIds = redisTemplate.opsForSet().members(sessionsKey);
+        if (sessionIds != null) {
+            for (Object sessionId : sessionIds) {
+                redisTemplate.opsForSet().remove(RedisKey.sessionRooms(String.valueOf(sessionId)), roomCode);
+            }
+        }
+        redisTemplate.delete(List.of(
+                sessionsKey,
+                RedisKey.roomGuests(roomCode),
+                RedisKey.roomSessionActors(roomCode)
+        ));
     }
 
     private ChatRoom getRoomOrThrow(String roomCode) {

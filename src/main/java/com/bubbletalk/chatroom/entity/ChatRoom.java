@@ -57,4 +57,13 @@ public class ChatRoom extends BaseEntity {
         this.maxParticipants = maxParticipants != null ? maxParticipants : 10;
         this.status = RoomStatus.OPEN;
     }
+
+    public boolean close() {
+        if (this.status == RoomStatus.CLOSED) {
+            return false;
+        }
+        this.status = RoomStatus.CLOSED;
+        this.closedAt = LocalDateTime.now();
+        return true;
+    }
 }

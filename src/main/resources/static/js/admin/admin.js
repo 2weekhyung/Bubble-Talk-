@@ -224,8 +224,50 @@ const ADMIN = {
                 td.textContent = value ?? '-';
                 tr.appendChild(td);
             });
+
+            const actionCell = document.createElement('td');
+            actionCell.className = 'py-3 px-2';
+            if (room.status !== 'CLOSED') {
+                const closeButton = document.createElement('button');
+                closeButton.type = 'button';
+                closeButton.className = 'px-2 py-1 text-xs font-bold rounded border border-red-500/40 text-red-400 hover:bg-red-500 hover:text-white';
+                closeButton.textContent = '종료';
+                closeButton.addEventListener('click', () => this.closeRoom(room.roomCode));
+                actionCell.appendChild(closeButton);
+            } else {
+                actionCell.textContent = '-';
+                actionCell.classList.add('text-slate-600');
+            }
+            tr.appendChild(actionCell);
             list.appendChild(tr);
         });
+    },
+
+    closeRoom: async function(roomCode) {
+        if (!confirm(`${roomCode} 채팅방을 종료하시겠습니까?`)) return;
+        try {
+            const response = await COMMON_AJAX.post(`/api/admin/rooms/${roomCode}/close`, {});
+            if (response.code === '0000') {
+                await Promise.all([this.fetchSummary(), this.fetchRooms()]);
+                alert('채팅방이 종료되었습니다.');
+            }
+        } catch (e) {
+            alert('채팅방 종료 실패: ' + e.message);
+        }
+    },
+
+    cleanupStaleSessions: async function() {
+        if (!confirm('현재 서버에서 활성 상태가 아닌 stale session을 정리하시겠습니까?')) return;
+        try {
+            const response = await COMMON_AJAX.post('/api/admin/realtime/cleanup-stale-sessions', {});
+            if (response.code === '0000') {
+                const result = response.result;
+                await Promise.all([this.fetchSummary(), this.fetchRooms()]);
+                alert(`${result.message}\n검사 세션: ${result.scannedSessions}\n영향받은 방: ${result.affectedRooms}`);
+            }
+        } catch (e) {
+            alert('Stale session 정리 실패: ' + e.message);
+        }
     },
 
     formatDateTime: function(value) {
