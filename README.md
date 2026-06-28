@@ -15,7 +15,7 @@ Redis와 WebSocket을 활용한 실시간 익명 채팅·투표 운영 관리 �
 | 실시간 처리 | WebSocket, STOMP |
 | 저장소 | MySQL, Redis |
 | Redis 활용 | TTL, Set, Sorted Set, Lua Script, Rate Limiting |
-| 화면 | Thymeleaf, Vanilla JS |
+| 화면 | Thymeleaf, Vanilla JS, Custom Admin Login |
 | 인프라 | Docker, Docker Compose |
 | 테스트 | JUnit 5, Mockito |
 
@@ -28,7 +28,9 @@ Redis와 WebSocket을 활용한 실시간 익명 채팅·투표 운영 관리 �
 - 점심 메뉴 등록과 실시간 투표
 - Redis Sorted Set 기반 실시간 랭킹 조회
 - 공개방·비밀방 생성, 입장, 퇴장
+- 공개 채팅방 최신순 10개 단위 페이징 조회
 - 방별 최대 인원 제한
+- 채팅방 생성 Rate Limiting
 - 서버 발급 GuestID 기반 익명 사용자 식별
 
 ### 운영자 기능
@@ -43,6 +45,7 @@ Redis와 WebSocket을 활용한 실시간 익명 채팅·투표 운영 관리 �
 - 시스템 공지 발송
 - 보안 이벤트 로그 조회
 - stale WebSocket session 수동 정리
+- 커스텀 관리자 로그인 화면
 
 ## 주요 엔티티
 
@@ -90,6 +93,30 @@ Redis와 WebSocket을 활용한 실시간 익명 채팅·투표 운영 관리 �
 
 익명 서비스에서도 도배, 중복 투표, 보안 이벤트 로그를 처리하려면 최소한의 식별자가 필요합니다. 서버 발급 GuestID를 우선 사용하고, 없을 경우 clientId, IP 순서로 fallback합니다.
 
+### 6. 반복 요청 제한은 Redis TTL 기반으로 처리
+
+사용자 입력이 많은 기능은 Redis TTL 키로 제한했습니다. 메뉴 추가와 채팅방 생성은 `SETNX + TTL`로 일정 시간 내 반복 생성을 막고, 채팅은 window/mute/last-message 키를 나누어 과도한 전송과 동일 메시지 반복을 차단합니다.
+
+| 대상 | 정책 | Redis key |
+| --- | --- | --- |
+| 채팅 메시지 | 10초에 5개 초과 시 30초 제한, 동일 메시지 10초 내 연속 전송 차단 | `chat:ratelimit:{type}:{actorId}` |
+| 메뉴 추가 | 같은 사용자 기준 30초에 1회 | `menu:add:ratelimit:{actorId}` |
+| 채팅방 생성 | 같은 사용자 기준 30초에 1회 | `room:create:ratelimit:{actorId}` |
+| 투표 | 같은 사용자가 같은 메뉴에 1회만 투표 | `lunch:voters:{yyyyMMdd}:{menuId}` |
+
+### 7. API 에러 응답은 전역 핸들러로 표준화
+
+컨트롤러별 `try-catch` 대신 `GlobalExceptionHandler`에서 REST API 실패 응답을 통일했습니다.
+
+| 상황 | HTTP Status | code |
+| --- | --- | --- |
+| 성공 | 200 | `0000` |
+| 비즈니스 예외 | 400 | `4000` 또는 지정 code |
+| 투표 운영 시간 외 차단 | 403 | `4030` |
+| 서버 내부 오류 | 500 | `5000` |
+
+프론트 공통 AJAX 모듈은 실패 응답의 `code`, `status`, `message`, `result`를 보존해 화면에서 일관된 실패 메시지를 표시할 수 있습니다.
+
 ## 아키텍처
 
 ```text
@@ -112,8 +139,10 @@ Redis와 WebSocket을 활용한 실시간 익명 채팅·투표 운영 관리 �
    |
    |-- ChatRoomService
    |     |-- 공개방/비밀방 관리
+   |     |-- 공개방 최신순 페이징
    |     |-- Redis Set 기반 현재 인원 계산
    |     |-- Lua Script 기반 정원 제어
+   |     |-- 방 생성 Rate Limiting
    |
    |-- AdminDashboardService
    |     |-- 운영 현황 조회
@@ -144,6 +173,8 @@ Redis와 WebSocket을 활용한 실시간 익명 채팅·투표 운영 관리 �
 | 실시간 투표 랭킹 | Sorted Set | `lunch:ranking:{yyyyMMdd}` |
 | 중복 투표 방지 | Set | `lunch:voters:{yyyyMMdd}:{menuId}` |
 | 전체 활성 세션 | Set | `chat:active:sessions` |
+| 메뉴 추가 제한 | String + TTL | `menu:add:ratelimit:{actorId}` |
+| 채팅방 생성 제한 | String + TTL | `room:create:ratelimit:{actorId}` |
 | 방별 활성 세션 | Set | `room:{roomCode}:sessions` |
 | 방별 익명 사용자 | Set | `room:{roomCode}:guests` |
 | session과 사용자 매핑 | Hash | `room:{roomCode}:session-actors` |
@@ -174,7 +205,11 @@ com.bubbletalk
 | 실시간 랭킹 반영 지연 | REST 처리 후 화면 갱신 이벤트가 없음 | 투표 성공 후 WebSocket으로 최신 랭킹 브로드캐스팅 |
 | 중복 투표 가능성 | 중복 확인과 점수 증가가 분리됨 | Redis `SADD` 결과가 최초 추가일 때만 ZSet score 증가 |
 | 채팅 도배 | 익명 사용자가 짧은 시간에 반복 전송 | Redis `INCR`/`EXPIRE` 기반 Rate Limiting 적용 |
+| 채팅방 생성 도배 | 같은 사용자가 방을 반복 생성할 수 있음 | Redis `SETNX`/TTL 기반으로 30초에 1회만 생성 허용 |
 | 방 정원 초과 | 현재 인원 확인과 session 추가 사이 경쟁 조건 | Redis Lua Script로 `SCARD`와 `SADD` 원자 처리 |
+| 공개방 목록 과다 노출 | 공개방 전체 목록을 한 번에 렌더링 | 최신 생성순 10개 단위 페이징으로 변경 |
+| API 에러 응답 불일치 | 컨트롤러별 직접 예외 처리와 전역 예외 처리가 혼재 | `BusinessException`은 HTTP 400, 서버 오류는 HTTP 500으로 표준화 |
+| 기본 로그인 화면 노출 | Spring Security 기본 로그인 페이지 사용 | 서비스 테마에 맞춘 커스텀 관리자 로그인 화면 적용 |
 | 금칙어 반영 지연 | DB 변경 후 Redis 캐시 미갱신 | 관리자 캐시 갱신 API와 cache-aside 로직 추가 |
 | stale session 잔존 | 비정상 종료 시 Redis session Set에 값이 남음 | WebSocket disconnect 처리와 관리자 수동 cleanup 기능 추가 |
 
@@ -207,6 +242,7 @@ macOS/Linux:
 | 화면 | URL |
 | --- | --- |
 | 메인 화면 | `http://localhost:8080` |
+| 관리자 로그인 | `http://localhost:8080/login` |
 | 관리자 대시보드 | `http://localhost:8080/admin/dashboard` |
 | Swagger UI | `http://localhost:8080/swagger-ui.html` |
 
@@ -231,11 +267,14 @@ gradlew.bat test
 - 금칙어 필터링
 - 채팅 Rate Limiting
 - 공개방/비밀방 생성
+- 채팅방 생성 Rate Limiting
+- 공개방 페이징 조회
 - 방 정원 초과 검증
 - Redis Lua 기반 session 등록
 - 방 종료와 Redis key 정리
 - WebSocket disconnect 시 session 정리
 - 관리자 대시보드 summary 계산
+- 전역 API 에러 응답 처리
 
 ## 현재 한계와 개선 계획
 
@@ -244,7 +283,6 @@ gradlew.bat test
 - 다중 서버 환경을 위한 공유 WebSocket session registry 설계
 - Redis 장애 시 복구 전략과 degraded mode 정의
 - Testcontainers 기반 MySQL/Redis 통합 테스트 추가
-- HTTP 에러 응답 규약 개선
 - 운영 환경에서 `ddl-auto: update` 제거 및 Flyway/Liquibase 도입
 - 관리자 계정 정책 강화
 - Swagger 공개 범위 제한
