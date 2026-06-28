@@ -8,11 +8,16 @@ import com.bubbletalk.chatroom.entity.RoomStatus;
 import com.bubbletalk.chatroom.repository.ChatRoomRepository;
 import com.bubbletalk.global.constant.RedisKey;
 import com.bubbletalk.global.exception.BusinessException;
+import com.bubbletalk.securitylog.entity.EventType;
+import com.bubbletalk.securitylog.entity.Severity;
+import com.bubbletalk.securitylog.service.SecurityEventLogService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,6 +27,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
 @Service
 @Slf4j
@@ -37,6 +43,7 @@ public class ChatRoomService {
     private static final int MAX_MAX_PARTICIPANTS = 50;
     private static final int NAME_MAX_LENGTH = 100;
     private static final int DESCRIPTION_MAX_LENGTH = 255;
+    private static final int ROOM_CREATE_LIMIT_SECONDS = 30;
     private static final DefaultRedisScript<Long> REGISTER_SESSION_SCRIPT = new DefaultRedisScript<>("""
             local exists = redis.call('SISMEMBER', KEYS[1], ARGV[1])
             if exists == 1 then
@@ -52,10 +59,21 @@ public class ChatRoomService {
 
     private final ChatRoomRepository chatRoomRepository;
     private final RedisTemplate<String, Object> redisTemplate;
+    private final SecurityEventLogService securityEventLogService;
     private final SecureRandom secureRandom = new SecureRandom();
 
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public ChatRoomResDto createRoom(ChatRoomCreateReqDto reqDto) {
+        return createRoomInternal(reqDto);
+    }
+
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public ChatRoomResDto createRoom(ChatRoomCreateReqDto reqDto, String requesterId) {
+        validateRoomCreateRateLimit(requesterId);
+        return createRoomInternal(reqDto);
+    }
+
+    private ChatRoomResDto createRoomInternal(ChatRoomCreateReqDto reqDto) {
         String name = normalizeName(reqDto != null ? reqDto.getName() : null);
         String description = normalizeDescription(reqDto != null ? reqDto.getDescription() : null);
         boolean privateRoom = reqDto != null && Boolean.TRUE.equals(reqDto.getIsPrivate());
@@ -78,10 +96,32 @@ public class ChatRoomService {
         throw new BusinessException("채팅방 코드를 생성하지 못했습니다. 다시 시도해주세요.");
     }
 
+    private void validateRoomCreateRateLimit(String requesterId) {
+        validateRequester(requesterId);
+
+        String key = RedisKey.ROOM_CREATE_RATELIMIT.with(requesterId);
+        Boolean allowed = redisTemplate.opsForValue()
+                .setIfAbsent(key, "1", ROOM_CREATE_LIMIT_SECONDS, TimeUnit.SECONDS);
+
+        if (allowed == null) {
+            log.error("room create rate limit check failed: requesterId={}", requesterId);
+            throw new BusinessException("채팅방 생성 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
+        }
+
+        if (!allowed) {
+            throw new BusinessException("채팅방은 30초에 한 번만 만들 수 있습니다.");
+        }
+    }
+
     public List<ChatRoomResDto> getPublicRooms() {
         return chatRoomRepository.findByPrivateRoomFalseAndStatusNotOrderByCreatedDateDesc(RoomStatus.CLOSED).stream()
                 .map(this::toResponse)
                 .toList();
+    }
+
+    public Page<ChatRoomResDto> getPublicRooms(Pageable pageable) {
+        return chatRoomRepository.findByPrivateRoomFalseAndStatusNotOrderByCreatedDateDesc(RoomStatus.CLOSED, pageable)
+                .map(this::toResponse);
     }
 
     public List<AdminChatRoomResDto> getAdminRooms() {
@@ -123,7 +163,7 @@ public class ChatRoomService {
     @Transactional
     public AdminChatRoomResDto closeRoom(String roomCode) {
         ChatRoom room = getRoomOrThrow(roomCode);
-        room.close();
+        boolean newlyClosed = room.close();
         chatRoomRepository.saveAndFlush(room);
 
         try {
@@ -133,6 +173,18 @@ public class ChatRoomService {
         }
 
         long currentParticipants = getCurrentParticipants(room.getRoomCode());
+        if (newlyClosed) {
+            securityEventLogService.logEvent(
+                    EventType.ROOM_CLOSED,
+                    Severity.WARN,
+                    room.getRoomCode(),
+                    null,
+                    null,
+                    null,
+                    null,
+                    "채팅방 종료"
+            );
+        }
         return AdminChatRoomResDto.from(room, currentParticipants, RoomStatus.CLOSED);
     }
 
@@ -214,6 +266,28 @@ public class ChatRoomService {
         }
 
         redisTemplate.delete(sessionRoomsKey);
+        return result;
+    }
+
+    public Map<String, String> getSessionRoomActors(String sessionId) {
+        Map<String, String> result = new HashMap<>();
+        if (sessionId == null || sessionId.isBlank()) {
+            return result;
+        }
+
+        var roomCodes = redisTemplate.opsForSet().members(RedisKey.sessionRooms(sessionId));
+        if (roomCodes == null || roomCodes.isEmpty()) {
+            return result;
+        }
+
+        for (Object roomCodeObj : roomCodes) {
+            String roomCode = String.valueOf(roomCodeObj);
+            Object actor = redisTemplate.opsForHash()
+                    .get(RedisKey.roomSessionActors(roomCode), sessionId);
+            if (actor != null) {
+                result.put(roomCode, String.valueOf(actor));
+            }
+        }
         return result;
     }
 

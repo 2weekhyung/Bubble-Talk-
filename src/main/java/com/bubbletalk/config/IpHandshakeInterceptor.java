@@ -21,7 +21,10 @@ public class IpHandshakeInterceptor implements HandshakeInterceptor {
                                    WebSocketHandler wsHandler, Map<String, Object> attributes) {
         if (request instanceof ServletServerHttpRequest) {
             ServletServerHttpRequest servletRequest = (ServletServerHttpRequest) request;
-            String ip = servletRequest.getServletRequest().getRemoteAddr();
+            String forwardedFor = servletRequest.getServletRequest().getHeader("X-Forwarded-For");
+            String ip = forwardedFor != null && !forwardedFor.isBlank()
+                    ? forwardedFor.split(",")[0].trim()
+                    : servletRequest.getServletRequest().getRemoteAddr();
             attributes.put("client-ip", ip);
 
             Cookie[] cookies = servletRequest.getServletRequest().getCookies();

@@ -5,248 +5,141 @@
       layout:decorate="~{layout/default}">
 
 <th:block layout:fragment="content">
-    <div class="p-4 md:p-8 max-w-7xl mx-auto">
-        <!-- 상단 헤더 -->
-        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+    <main class="admin-shell">
+        <header class="admin-hero">
             <div>
-                <h1 class="text-3xl font-black italic text-green-500"><i class="fa-solid fa-gauge-high mr-2"></i>ADMIN DASHBOARD</h1>
-                <p class="text-slate-500 text-sm">서비스 운영 및 실시간 모니터링 시스템</p>
+                <span class="admin-kicker">BubbleTalk Operations</span>
+                <h1>운영 대시보드</h1>
+                <p>서비스 상태와 채팅방을 한 화면에서 확인하고 관리합니다.</p>
             </div>
-            <div class="flex gap-2">
+            <div class="admin-actions">
+                <button onclick="ADMIN.fetchSummary(); ADMIN.fetchRooms()" class="admin-btn secondary"><i class="fa-solid fa-rotate"></i> 새로고침</button>
+                <button onclick="ADMIN.cleanupStaleSessions()" class="admin-btn secondary"><i class="fa-solid fa-broom"></i> 세션 정리</button>
                 <form th:action="@{/logout}" method="post">
                     <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
-                    <button type="submit" class="px-4 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs font-bold hover:bg-slate-700 transition-all">
-                        <i class="fa-solid fa-right-from-bracket mr-1"></i> Logout
-                    </button>
+                    <button type="submit" class="admin-btn danger"><i class="fa-solid fa-right-from-bracket"></i> 로그아웃</button>
                 </form>
-                <button onclick="ADMIN.refreshAllCache()" class="px-4 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs font-bold hover:bg-slate-700 transition-all">
-                    <i class="fa-solid fa-sync mr-1"></i> 전체 캐시 갱신
-                </button>
-                <button onclick="ADMIN.cleanupStaleSessions()" class="px-4 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs font-bold hover:bg-slate-700 transition-all">
-                    <i class="fa-solid fa-broom mr-1"></i> Stale Session 정리
-                </button>
             </div>
-        </div>
+        </header>
 
-        <!-- 대시보드 카드 그리드 -->
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-            <!-- 실시간 접속자 -->
-            <div class="bg-slate-900/50 border border-slate-800 p-6 rounded-2xl shadow-xl">
-                <div class="flex items-center justify-between mb-4">
-                    <span class="text-xs font-bold text-slate-500 uppercase tracking-widest">Live Users</span>
-                    <div class="w-2 h-2 bg-green-500 rounded-full animate-ping"></div>
-                </div>
-                <div class="text-4xl font-black text-white mb-1" id="admin-user-count">0</div>
-                <p class="text-xs text-slate-500">현재 웹소켓 연결 중인 사용자</p>
-            </div>
+        <section class="admin-stat-grid">
+            <article class="admin-stat-card accent-green"><span>실시간 접속자</span><strong id="admin-user-count">0</strong><small>현재 WebSocket 연결</small></article>
+            <article class="admin-stat-card accent-blue"><span>오늘 등록 메뉴</span><strong id="admin-menu-count">0</strong><small>투표 후보 수</small></article>
+            <article class="admin-stat-card accent-orange"><span>오늘 총 투표</span><strong id="admin-total-votes">0</strong><small>누적 참여 수</small></article>
+            <article class="admin-stat-card accent-purple">
+                <div class="status-line"><span>시스템 상태</span><span id="admin-redis-status" class="status-badge">확인 중</span></div>
+                <strong id="admin-total-rooms">0</strong><small>전체 채팅방</small>
+            </article>
+        </section>
 
-            <!-- 오늘 등록된 메뉴 -->
-            <div class="bg-slate-900/50 border border-slate-800 p-6 rounded-2xl shadow-xl">
-                <div class="flex items-center justify-between mb-4">
-                    <span class="text-xs font-bold text-slate-500 uppercase tracking-widest">Active Menus</span>
-                    <i class="fa-solid fa-utensils text-slate-700"></i>
-                </div>
-                <div class="text-4xl font-black text-white mb-1" id="admin-menu-count">0</div>
-                <p class="text-xs text-slate-500">전장에 투입된 총 메뉴 수</p>
+        <section class="admin-room-summary admin-card">
+            <div class="admin-section-head">
+                <div><span class="admin-kicker">Rooms</span><h2>채팅방 현황</h2></div>
+                <button onclick="ADMIN.fetchRooms()" class="admin-icon-btn"><i class="fa-solid fa-rotate"></i></button>
             </div>
-
-            <!-- 총 투표 수 -->
-            <div class="bg-slate-900/50 border border-slate-800 p-6 rounded-2xl shadow-xl">
-                <div class="flex items-center justify-between mb-4">
-                    <span class="text-xs font-bold text-slate-500 uppercase tracking-widest">Total Votes</span>
-                    <i class="fa-solid fa-fire text-slate-700"></i>
-                </div>
-                <div class="text-4xl font-black text-white mb-1" id="admin-total-votes">0</div>
-                <p class="text-xs text-slate-500">누적 화력 지원 횟수</p>
-            </div>
-
-            <!-- 시스템 공지 발송 카드 추가 -->
-            <div class="bg-slate-900/50 border border-slate-800 p-6 rounded-2xl shadow-xl">
-                <div class="flex items-center justify-between mb-4">
-                    <span class="text-xs font-bold text-slate-500 uppercase tracking-widest">Announcement</span>
-                    <i class="fa-solid fa-bullhorn text-blue-500"></i>
-                </div>
-                <div class="flex gap-2">
-                    <input type="text" id="admin-announcement-msg" placeholder="공지 입력"
-                           class="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-1 text-xs focus:outline-none focus:border-blue-500 text-white">
-                    <button onclick="ADMIN.sendAnnouncement()" class="bg-blue-600 text-white px-3 py-1 rounded-lg text-xs font-bold hover:bg-blue-500 transition-all">발송</button>
-                </div>
-                <p class="text-[10px] text-slate-500 mt-2">모든 사용자 채팅창에 공지 버블 생성</p>
-            </div>
-        </div>
-
-        <!-- 채팅방 운영 요약 -->
-        <section class="bg-slate-900/50 border border-slate-800 rounded-2xl p-6 shadow-xl mb-8">
-            <div class="flex items-center justify-between mb-5">
-                <h3 class="text-xl font-bold italic">
-                    <i class="fa-solid fa-door-open text-cyan-500 mr-2"></i>Room Operations
-                </h3>
-                <span id="admin-redis-status"
-                      class="text-[10px] px-2 py-1 rounded border font-bold uppercase">Redis 확인 중</span>
-            </div>
-            <div class="grid grid-cols-2 md:grid-cols-6 gap-3">
-                <div class="p-3 bg-slate-800/50 rounded-xl border border-slate-700">
-                    <p class="text-[10px] text-slate-500 uppercase font-bold">Total</p>
-                    <strong id="admin-total-rooms" class="text-2xl">0</strong>
-                </div>
-                <div class="p-3 bg-slate-800/50 rounded-xl border border-slate-700">
-                    <p class="text-[10px] text-slate-500 uppercase font-bold">Public</p>
-                    <strong id="admin-public-rooms" class="text-2xl">0</strong>
-                </div>
-                <div class="p-3 bg-slate-800/50 rounded-xl border border-slate-700">
-                    <p class="text-[10px] text-slate-500 uppercase font-bold">Private</p>
-                    <strong id="admin-private-rooms" class="text-2xl">0</strong>
-                </div>
-                <div class="p-3 bg-slate-800/50 rounded-xl border border-slate-700">
-                    <p class="text-[10px] text-green-500 uppercase font-bold">Open</p>
-                    <strong id="admin-open-rooms" class="text-2xl">0</strong>
-                </div>
-                <div class="p-3 bg-slate-800/50 rounded-xl border border-slate-700">
-                    <p class="text-[10px] text-yellow-500 uppercase font-bold">Full</p>
-                    <strong id="admin-full-rooms" class="text-2xl">0</strong>
-                </div>
-                <div class="p-3 bg-slate-800/50 rounded-xl border border-slate-700">
-                    <p class="text-[10px] text-red-500 uppercase font-bold">Closed</p>
-                    <strong id="admin-closed-rooms" class="text-2xl">0</strong>
-                </div>
+            <div class="room-metric-grid">
+                <div><span>공개</span><strong id="admin-public-rooms">0</strong></div>
+                <div><span>비공개</span><strong id="admin-private-rooms">0</strong></div>
+                <div class="good"><span>운영 중</span><strong id="admin-open-rooms">0</strong></div>
+                <div class="warn"><span>정원 마감</span><strong id="admin-full-rooms">0</strong></div>
+                <div class="bad"><span>종료</span><strong id="admin-closed-rooms">0</strong></div>
             </div>
         </section>
 
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            <!-- 금칙어 관리 섹션 -->
-            <section class="bg-slate-900/50 border border-slate-800 rounded-2xl p-6 shadow-xl">
-                <div class="flex items-center justify-between mb-6">
-                    <h3 class="text-xl font-bold italic"><i class="fa-solid fa-shield-halved text-orange-500 mr-2"></i>Forbidden Words</h3>
-                    <span class="text-[10px] px-2 py-1 bg-orange-500/10 text-orange-500 rounded border border-orange-500/20 font-bold uppercase">Security</span>
-                </div>
-
-                <!-- 금칙어 추가 폼 -->
-                <div class="flex gap-2 mb-6">
-                    <input type="text" id="new-forbidden-word" placeholder="새로운 금칙어 입력"
-                           class="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-orange-500">
-                    <button onclick="ADMIN.addForbiddenWord()" class="bg-orange-500 text-white font-black px-4 rounded-xl hover:bg-orange-400 transition-all text-sm">등록</button>
-                </div>
-
-                <!-- 금칙어 리스트 -->
-                <div class="max-h-[300px] overflow-y-auto custom-scroll pr-2 space-y-2" id="forbidden-word-list">
-                    <!-- 리스트가 동적으로 렌더링됨 -->
-                </div>
-            </section>
-
-            <!-- 이벤트 제어 섹션 -->
-            <section class="bg-slate-900/50 border border-slate-800 rounded-2xl p-6 shadow-xl">
-                <div class="flex items-center justify-between mb-6">
-                    <h3 class="text-xl font-bold italic"><i class="fa-solid fa-bolt text-yellow-500 mr-2"></i>Event Control</h3>
-                    <span class="text-[10px] px-2 py-1 bg-yellow-500/10 text-yellow-500 rounded border border-yellow-500/20 font-bold uppercase">System</span>
-                </div>
-
-                <div class="space-y-6">
-                    <!-- 운영 시간 설정 추가 -->
-                    <div class="p-4 bg-slate-800/50 rounded-xl border border-slate-700">
-                        <h4 class="font-bold text-sm mb-3"><i class="fa-solid fa-clock text-blue-400 mr-2"></i>운영 시간 설정</h4>
-                        <div class="grid grid-cols-2 gap-4 mb-4">
-                            <div>
-                                <label class="text-[10px] text-slate-500 uppercase font-bold block mb-1">Start Time</label>
-                                <input type="time" id="lunch-start-time" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500">
-                            </div>
-                            <div>
-                                <label class="text-[10px] text-slate-500 uppercase font-bold block mb-1">End Time</label>
-                                <input type="time" id="lunch-end-time" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500">
-                            </div>
-                        </div>
-                        <button onclick="ADMIN.updateLunchTimes()" class="w-full py-2 bg-blue-500/10 border border-blue-500/30 text-blue-500 text-xs font-bold rounded-lg hover:bg-blue-500 hover:text-white transition-all">설정 저장</button>
-                    </div>
-
-                    <div class="flex items-center justify-between p-4 bg-slate-800/50 rounded-xl border border-slate-700">
-                        <div>
-                            <h4 class="font-bold text-sm mb-1">점심 전쟁 활성화 상태</h4>
-                            <p class="text-xs text-slate-500">강제로 OPEN/CLOSED 상태를 변경합니다.</p>
-                        </div>
-                        <div class="flex gap-2">
-                            <button id="btn-status-open" onclick="ADMIN.toggleEventStatus('OPEN')" class="px-3 py-1.5 rounded-lg text-xs font-bold border border-slate-600 hover:bg-green-500 hover:border-green-500 hover:text-slate-900 transition-all">OPEN</button>
-                            <button id="btn-status-closed" onclick="ADMIN.toggleEventStatus('CLOSED')" class="px-3 py-1.5 rounded-lg text-xs font-bold border border-slate-600 hover:bg-red-500 hover:border-red-500 hover:text-slate-900 transition-all">CLOSED</button>
-                        </div>
-                    </div>
-
-                    <div class="p-4 bg-slate-800/50 rounded-xl border border-slate-700">
-                        <h4 class="font-bold text-sm mb-2 text-red-400"><i class="fa-solid fa-triangle-exclamation mr-1"></i>데이터 위험 구역</h4>
-                        <p class="text-[11px] text-slate-500 mb-4">정산 전 데이터 초기화는 복구가 불가능합니다. 신중히 사용하세요.</p>
-                        <button onclick="ADMIN.resetDailyData()" class="w-full py-2 bg-red-500/10 border border-red-500/30 text-red-500 text-xs font-bold rounded-lg hover:bg-red-500 hover:text-white transition-all">오늘의 랭킹 및 투표 데이터 전체 삭제</button>
-                    </div>
-                </div>
-            </section>
-        </div>
-
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-8">
-            <!-- 점심 투표 이력 섹션 -->
-            <section class="bg-slate-900/50 border border-slate-800 rounded-2xl p-6 shadow-xl">
-                <div class="flex items-center justify-between mb-6">
-                    <h3 class="text-xl font-bold italic"><i class="fa-solid fa-history text-blue-500 mr-2"></i>Lunch History</h3>
-                    <span class="text-[10px] px-2 py-1 bg-blue-500/10 text-blue-500 rounded border border-blue-500/20 font-bold uppercase">Archived</span>
-                </div>
-
-                <div class="overflow-x-auto">
-                    <table class="w-full text-left text-sm">
-                        <thead class="text-slate-500 uppercase text-[10px] font-bold border-b border-slate-800">
-                            <tr>
-                                <th class="pb-3 px-2">날짜</th>
-                                <th class="pb-3 px-2">우승 메뉴</th>
-                                <th class="pb-3 px-2 text-right">득표수</th>
-                            </tr>
-                        </thead>
-                        <tbody id="lunch-history-list" class="divide-y divide-slate-800/50">
-                            <!-- 이력이 동적으로 렌더링됨 -->
-                        </tbody>
+        <div class="admin-main-grid">
+            <section class="admin-card span-two">
+                <div class="admin-section-head"><div><span class="admin-kicker">Room management</span><h2>전체 채팅방</h2></div></div>
+                <div class="admin-table-wrap">
+                    <table class="admin-table">
+                        <thead><tr><th>코드</th><th>방 이름</th><th>공개</th><th>상태</th><th>인원</th><th>생성 시각</th><th>종료 시각</th><th>관리</th></tr></thead>
+                        <tbody id="admin-room-list"></tbody>
                     </table>
                 </div>
             </section>
 
-            <!-- 실시간 채팅 모니터 섹션 -->
-            <section class="bg-slate-900/50 border border-slate-800 rounded-2xl p-6 shadow-xl">
-                <div class="flex items-center justify-between mb-6">
-                    <h3 class="text-xl font-bold italic"><i class="fa-solid fa-comments text-purple-500 mr-2"></i>Live Chat Monitor</h3>
-                    <span class="text-[10px] px-2 py-1 bg-purple-500/10 text-purple-500 rounded border border-purple-500/20 font-bold uppercase">Real-time</span>
-                </div>
+            <section class="admin-card">
+                <div class="admin-section-head"><div><span class="admin-kicker">Announcement</span><h2>전체 공지</h2></div></div>
+                <div class="admin-inline-form"><input type="text" id="admin-announcement-msg" placeholder="사용자에게 보낼 공지"><button onclick="ADMIN.sendAnnouncement()">전송</button></div>
+                <p class="admin-help">전체 채팅 화면에 시스템 메시지로 표시됩니다.</p>
+            </section>
 
-                <div id="admin-chat-list" class="h-[300px] overflow-y-auto custom-scroll pr-2 space-y-3 text-xs">
-                    <!-- 채팅 메시지가 실시간으로 추가됨 -->
+            <section class="admin-card">
+                <div class="admin-section-head"><div><span class="admin-kicker">Event control</span><h2>점심 투표 운영</h2></div></div>
+                <div class="admin-time-grid">
+                    <label>시작 시각<input type="time" id="lunch-start-time"></label>
+                    <label>종료 시각<input type="time" id="lunch-end-time"></label>
+                </div>
+                <button onclick="ADMIN.updateLunchTimes()" class="admin-wide-btn">운영 시간 저장</button>
+                <div class="admin-toggle-row">
+                    <span>투표 상태</span>
+                    <div><button id="btn-status-open" onclick="ADMIN.toggleEventStatus('OPEN')">OPEN</button><button id="btn-status-closed" onclick="ADMIN.toggleEventStatus('CLOSED')">CLOSED</button></div>
                 </div>
             </section>
+
+            <section class="admin-card">
+                <div class="admin-section-head"><div><span class="admin-kicker">Security</span><h2>금칙어 관리</h2></div></div>
+                <div class="admin-inline-form"><input type="text" id="new-forbidden-word" placeholder="새 금칙어 입력"><button onclick="ADMIN.addForbiddenWord()">등록</button></div>
+                <div id="forbidden-word-list" class="admin-list custom-scroll"></div>
+                <button onclick="ADMIN.refreshAllCache()" class="admin-text-btn">금칙어 캐시 갱신</button>
+            </section>
+
+            <section class="admin-card">
+                <div class="admin-section-head"><div><span class="admin-kicker">Live monitor</span><h2>실시간 전체 채팅</h2></div></div>
+                <div id="admin-chat-list" class="admin-chat-list custom-scroll"></div>
+            </section>
+
+            <section class="admin-card span-two">
+                <div class="admin-section-head">
+                    <div><span class="admin-kicker">Security events</span><h2>보안 이벤트 로그</h2></div>
+                    <button onclick="ADMIN.fetchSecurityEvents()" class="admin-icon-btn"><i class="fa-solid fa-rotate"></i></button>
+                </div>
+                <div class="admin-inline-form">
+                    <select id="security-event-type">
+                        <option value="">전체 이벤트</option>
+                        <option value="ROOM_CREATED">ROOM_CREATED</option>
+                        <option value="ROOM_ENTER">ROOM_ENTER</option>
+                        <option value="ROOM_LEAVE">ROOM_LEAVE</option>
+                        <option value="MESSAGE_SEND">MESSAGE_SEND</option>
+                        <option value="SYSTEM_MESSAGE_SEND">SYSTEM_MESSAGE_SEND</option>
+                        <option value="VOTE_CREATED">VOTE_CREATED</option>
+                        <option value="VOTE_SUBMIT">VOTE_SUBMIT</option>
+                        <option value="ROOM_CLOSED">ROOM_CLOSED</option>
+                        <option value="ADMIN_ROOM_CLOSED">ADMIN_ROOM_CLOSED</option>
+                        <option value="STALE_SESSION_CLEANUP">STALE_SESSION_CLEANUP</option>
+                        <option value="SECURITY_LOG_VIEW">SECURITY_LOG_VIEW</option>
+                    </select>
+                    <select id="security-severity">
+                        <option value="">전체 중요도</option>
+                        <option value="INFO">INFO</option>
+                        <option value="WARN">WARN</option>
+                        <option value="DANGER">DANGER</option>
+                        <option value="BLOCKED">BLOCKED</option>
+                    </select>
+                    <input type="text" id="security-room-code" placeholder="roomCode">
+                    <input type="text" id="security-guest-id" placeholder="guestId">
+                    <input type="text" id="security-ip-address" placeholder="IP">
+                    <button onclick="ADMIN.fetchSecurityEvents()">조회</button>
+                </div>
+                <div class="admin-table-wrap">
+                    <table class="admin-table compact">
+                        <thead><tr><th>시각</th><th>이벤트</th><th>중요도</th><th>방 코드</th><th>GuestId</th><th>IP</th><th>사유</th></tr></thead>
+                        <tbody id="security-event-list"></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="admin-card">
+                <div class="admin-section-head"><div><span class="admin-kicker">History</span><h2>역대 우승 메뉴</h2></div></div>
+                <div class="admin-table-wrap"><table class="admin-table compact"><thead><tr><th>날짜</th><th>메뉴</th><th>득표</th></tr></thead><tbody id="lunch-history-list"></tbody></table></div>
+            </section>
+
+            <section class="admin-card danger-zone">
+                <div class="admin-section-head"><div><span class="admin-kicker">Danger zone</span><h2>데이터 초기화</h2></div></div>
+                <p>오늘의 메뉴와 투표 데이터를 삭제합니다. 이 작업은 되돌릴 수 없습니다.</p>
+                <button onclick="ADMIN.resetDailyData()">오늘 데이터 초기화</button>
+            </section>
         </div>
-
-        <!-- 전체 채팅방 목록 -->
-        <section class="bg-slate-900/50 border border-slate-800 rounded-2xl p-6 shadow-xl mt-8">
-            <div class="flex items-center justify-between mb-6">
-                <h3 class="text-xl font-bold italic">
-                    <i class="fa-solid fa-list text-cyan-500 mr-2"></i>Chat Rooms
-                </h3>
-                <button onclick="ADMIN.fetchRooms()"
-                        class="px-3 py-1.5 rounded-lg text-xs font-bold border border-slate-700 hover:bg-slate-800">
-                    새로고침
-                </button>
-            </div>
-            <div class="overflow-x-auto">
-                <table class="w-full text-left text-sm">
-                    <thead class="text-slate-500 uppercase text-[10px] font-bold border-b border-slate-800">
-                        <tr>
-                            <th class="pb-3 px-2">Room Code</th>
-                            <th class="pb-3 px-2">방 이름</th>
-                            <th class="pb-3 px-2">공개 여부</th>
-                            <th class="pb-3 px-2">상태</th>
-                            <th class="pb-3 px-2">현재/최대</th>
-                            <th class="pb-3 px-2">생성 시각</th>
-                            <th class="pb-3 px-2">종료 시각</th>
-                            <th class="pb-3 px-2">관리</th>
-                        </tr>
-                    </thead>
-                    <tbody id="admin-room-list" class="divide-y divide-slate-800/50">
-                    </tbody>
-                </table>
-            </div>
-        </section>
-    </div>
-
-    <!-- 전용 스크립트 -->
+    </main>
     <script src="/js/admin/admin.js"></script>
 </th:block>
 </html>

@@ -3,7 +3,15 @@ package com.bubbletalk.admin.dashboard.controller;
 import com.bubbletalk.base.dto.BaseResDto;
 import com.bubbletalk.admin.dashboard.service.AdminDashboardService;
 import com.bubbletalk.menu.service.MenuService;
+import com.bubbletalk.securitylog.dto.SecurityEventLogSearchCondition;
+import com.bubbletalk.securitylog.entity.EventType;
+import com.bubbletalk.securitylog.entity.Severity;
+import com.bubbletalk.securitylog.service.SecurityEventLogService;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -22,6 +30,7 @@ public class AdminDashBoardRestController {
     private final com.bubbletalk.menu.controller.MenuSocketController socketController;
     private final AdminDashboardService adminDashboardService;
     private final com.bubbletalk.admin.dashboard.service.RealtimeSessionCleanupService realtimeSessionCleanupService;
+    private final SecurityEventLogService securityEventLogService;
 
     @GetMapping("/dashboard/summary")
     public ResponseEntity<BaseResDto> getDashboardSummary() {
@@ -41,6 +50,22 @@ public class AdminDashBoardRestController {
     @PostMapping("/realtime/cleanup-stale-sessions")
     public ResponseEntity<BaseResDto> cleanupStaleSessions() {
         return ResponseEntity.ok(BaseResDto.ok(realtimeSessionCleanupService.cleanupStaleSessions()));
+    }
+
+    @GetMapping("/security-events")
+    public ResponseEntity<BaseResDto> getSecurityEvents(
+            @ModelAttribute SecurityEventLogSearchCondition condition,
+            @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable,
+            HttpServletRequest request) {
+        securityEventLogService.logEvent(
+                EventType.SECURITY_LOG_VIEW,
+                Severity.INFO,
+                condition.getRoomCode(),
+                condition.getGuestId(),
+                request,
+                "관리자 보안 이벤트 로그 조회"
+        );
+        return ResponseEntity.ok(BaseResDto.ok(securityEventLogService.search(condition, pageable)));
     }
 
     /**

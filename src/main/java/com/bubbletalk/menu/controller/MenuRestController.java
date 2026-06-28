@@ -7,6 +7,9 @@ import com.bubbletalk.menu.dto.req.MenuAddReqDto;
 import com.bubbletalk.menu.dto.req.MenuVoteReqDto;
 import com.bubbletalk.menu.dto.res.DailyMenuResDto;
 import com.bubbletalk.menu.service.MenuService;
+import com.bubbletalk.securitylog.entity.EventType;
+import com.bubbletalk.securitylog.entity.Severity;
+import com.bubbletalk.securitylog.service.SecurityEventLogService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
@@ -31,6 +34,7 @@ public class MenuRestController {
     private final MenuSocketController socketController;
     private final RedisTemplate<String, Object> redisTemplate;
     private final GuestIdSupport guestIdSupport;
+    private final SecurityEventLogService securityEventLogService;
 
     /**
      * [GET] /api/menu/status
@@ -86,6 +90,14 @@ public class MenuRestController {
         try {
             // 1. 메뉴 저장 및 투표 통합 처리
             menuService.saveMenu(reqDto.getMenuName(), requesterId);
+            securityEventLogService.logEvent(
+                    EventType.VOTE_CREATED,
+                    Severity.INFO,
+                    null,
+                    resolveGuestId(request),
+                    request,
+                    "투표 생성"
+            );
             
             // 2. 실시간 전파 (목록만 갱신)
             socketController.broadcastMenuUpdate();
@@ -145,6 +157,14 @@ public class MenuRestController {
         String voterId = resolveVoterId(clientId, request);
         try {
             menuService.increaseVote(reqDto.getMenuId(), voterId);
+            securityEventLogService.logEvent(
+                    EventType.VOTE_SUBMIT,
+                    Severity.INFO,
+                    null,
+                    resolveGuestId(request),
+                    request,
+                    "사용자 투표 참여"
+            );
             socketController.broadcastMenuUpdate();
             return ResponseEntity.ok(BaseResDto.ok());
         } catch (com.bubbletalk.global.exception.BusinessException e) {
@@ -158,6 +178,10 @@ public class MenuRestController {
         return guestIdSupport.resolve(request)
                 .map(guestId -> "guest:" + guestId)
                 .orElseGet(() -> resolveLegacyVoterId(clientId, request));
+    }
+
+    private String resolveGuestId(HttpServletRequest request) {
+        return guestIdSupport.resolve(request).orElse(null);
     }
 
     private String resolveLegacyVoterId(String clientId, HttpServletRequest request) {

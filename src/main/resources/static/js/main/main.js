@@ -12,6 +12,13 @@ const MAINJS = {
     currentRoomCode: null,
     roomSubscription: null,
     roomCountSubscription: null,
+    justCreatedRoomCode: null,
+    currentRoom: null,
+    currentRoomClosed: false,
+    roomPage: 0,
+    roomPageSize: 10,
+    roomTotalPages: 1,
+    roomTotalElements: 0,
 
     /**
      * 페이지 로드 시 초기화
@@ -220,11 +227,18 @@ const MAINJS = {
         }
     },
 
-    fetchRooms: async function() {
+    fetchRooms: async function(page = this.roomPage) {
         try {
-            const response = await COMMON_AJAX.get('/api/rooms');
+            const targetPage = Math.max(Number(page) || 0, 0);
+            const response = await COMMON_AJAX.get(`/api/rooms?page=${targetPage}&size=${this.roomPageSize}`);
             if (response.code === "0000") {
-                this.renderRooms(response.result || []);
+                const result = response.result || {};
+                const rooms = Array.isArray(result) ? result : (result.content || []);
+                this.roomPage = Array.isArray(result) ? 0 : (result.number || 0);
+                this.roomTotalPages = Array.isArray(result) ? 1 : Math.max(result.totalPages || 1, 1);
+                this.roomTotalElements = Array.isArray(result) ? rooms.length : (result.totalElements || rooms.length);
+                this.renderRooms(rooms);
+                this.renderRoomPagination();
             }
         } catch (e) {
             console.error('채팅방 목록 조회 실패:', e);
@@ -247,11 +261,12 @@ const MAINJS = {
 
             if (response.code === "0000") {
                 input.value = '';
-                await this.fetchRooms();
+                this.justCreatedRoomCode = response.result.roomCode;
+                await this.fetchRooms(0);
                 await this.joinRoom(response.result.roomCode);
             }
         } catch (error) {
-            this.createBullet(`❌ ${error.message}`, CLIENT_IP, false, this.clientId);
+            this.createBullet(`방 생성 실패: ${this.getErrorMessage(error)}`, 'SYSTEM', true);
         }
     },
 
@@ -263,13 +278,25 @@ const MAINJS = {
     },
 
     joinRoom: async function(roomCode) {
+        if (this.currentRoomCode === roomCode) {
+            document.getElementById('msg-input')?.focus();
+            return;
+        }
         try {
             const response = await COMMON_AJAX.post(`/api/rooms/${roomCode}/join`, {}, { 'X-Client-Id': this.clientId });
             if (response.code === "0000") {
+                const isNewlyCreatedRoom = this.justCreatedRoomCode === response.result.roomCode;
                 this.enterRoom(response.result);
+                this.createBullet(
+                    isNewlyCreatedRoom
+                        ? `채팅방을 만들고 입장했습니다. 방 코드: ${response.result.roomCode}`
+                        : `채팅방에 입장했습니다. 방 코드: ${response.result.roomCode}`,
+                    'SYSTEM',
+                    true
+                );
             }
         } catch (error) {
-            this.createBullet(`❌ ${error.message}`, CLIENT_IP, false, this.clientId);
+            this.createBullet(`방 입장 실패: ${this.getErrorMessage(error)}`, 'SYSTEM', true);
         }
     },
 
@@ -279,6 +306,8 @@ const MAINJS = {
             this.stompClient.send(`/app/rooms/${previousRoomCode}/leave`, { clientId: this.clientId }, '');
         }
         this.currentRoomCode = room.roomCode;
+        this.currentRoom = room;
+        this.currentRoomClosed = room.status === 'CLOSED';
 
         if (this.roomSubscription) this.roomSubscription.unsubscribe();
         if (this.roomCountSubscription) this.roomCountSubscription.unsubscribe();
@@ -286,32 +315,213 @@ const MAINJS = {
         if (this.stompClient?.connected) {
             this.roomSubscription = this.stompClient.subscribe(`/topic/rooms/${room.roomCode}/bubbles`, (response) => {
                 const chatMsg = JSON.parse(response.body);
-                this.createBullet(chatMsg.content, chatMsg.senderIp, chatMsg.senderIp === 'SYSTEM', chatMsg.senderClientId);
+                this.handleRoomMessage(chatMsg);
             });
             this.roomCountSubscription = this.stompClient.subscribe(`/topic/rooms/${room.roomCode}/user-count`, (response) => {
-                const label = document.getElementById('current-room-label');
-                if (label) label.textContent = `${room.name} (${response.body}/${room.maxParticipants})`;
+                this.updateRoomParticipantCount(Number(response.body), room.maxParticipants);
             });
             this.stompClient.send(`/app/rooms/${room.roomCode}/join`, { clientId: this.clientId }, '');
         }
 
-        const label = document.getElementById('current-room-label');
-        if (label) label.textContent = `${room.name} (${room.currentParticipants}/${room.maxParticipants})`;
+        this.showRoomMode(room);
+
+        if (this.justCreatedRoomCode === room.roomCode) {
+            this.justCreatedRoomCode = null;
+        }
+
+        document.querySelectorAll('.room-list-item').forEach(item => {
+            item.classList.toggle('active', item.dataset.roomCode === room.roomCode);
+        });
     },
 
     renderRooms: function(rooms) {
         const list = document.getElementById('room-list');
         if (!list) return;
         list.innerHTML = '';
+        const count = document.getElementById('room-list-count');
+        if (count) count.textContent = `${this.roomTotalElements}개`;
+
+        if (!rooms.length) {
+            const empty = document.createElement('div');
+            empty.className = 'room-empty-state';
+            empty.innerHTML = '<i class="fa-regular fa-comments"></i><br>열린 공개방이 없습니다.<br>첫 번째 방을 만들어보세요.';
+            list.appendChild(empty);
+            return;
+        }
 
         rooms.forEach(room => {
             const row = document.createElement('button');
             row.type = 'button';
-            row.className = 'show-more-btn';
-            row.textContent = `${room.name} (${room.currentParticipants}/${room.maxParticipants})`;
+            row.className = 'room-list-item';
+            row.dataset.roomCode = room.roomCode;
+            row.classList.toggle('active', room.roomCode === this.currentRoomCode);
+
+            const icon = document.createElement('span');
+            icon.className = 'room-list-icon';
+            icon.innerHTML = '<i class="fa-solid fa-comments"></i>';
+
+            const copy = document.createElement('span');
+            copy.className = 'room-list-copy';
+            const name = document.createElement('strong');
+            name.textContent = room.name;
+            const code = document.createElement('small');
+            code.textContent = `코드 ${room.roomCode}`;
+            copy.append(name, code);
+
+            const capacity = document.createElement('span');
+            capacity.className = 'room-capacity';
+            capacity.textContent = `${room.currentParticipants}/${room.maxParticipants}`;
+
+            row.append(icon, copy, capacity);
             row.addEventListener('click', () => this.joinRoom(room.roomCode));
             list.appendChild(row);
         });
+    },
+
+    renderRoomPagination: function() {
+        const label = document.getElementById('room-page-label');
+        if (label) label.textContent = `${this.roomPage + 1} / ${this.roomTotalPages}`;
+
+        const prevButton = document.getElementById('btn-prev-rooms');
+        if (prevButton) prevButton.disabled = this.roomPage <= 0;
+
+        const nextButton = document.getElementById('btn-next-rooms');
+        if (nextButton) nextButton.disabled = this.roomPage >= this.roomTotalPages - 1;
+    },
+
+    leaveCurrentRoom: function() {
+        if (this.currentRoomCode && this.stompClient?.connected) {
+            this.stompClient.send(`/app/rooms/${this.currentRoomCode}/leave`, { clientId: this.clientId }, '');
+        }
+        if (this.roomSubscription) this.roomSubscription.unsubscribe();
+        if (this.roomCountSubscription) this.roomCountSubscription.unsubscribe();
+        this.roomSubscription = null;
+        this.roomCountSubscription = null;
+        this.currentRoomCode = null;
+        this.currentRoom = null;
+        this.currentRoomClosed = false;
+
+        this.showLobbyMode();
+        document.querySelectorAll('.room-list-item').forEach(item => item.classList.remove('active'));
+        this.createBullet('전체 채팅으로 이동했습니다.', 'SYSTEM', true);
+        this.fetchRooms();
+    },
+
+    showRoomMode: function(room) {
+        document.querySelector('.app-main')?.classList.add('room-mode');
+        document.getElementById('bamboo-forest')?.classList.add('room-active');
+        document.querySelector('.room-hub')?.classList.add('hidden');
+        document.getElementById('quick-info-grid')?.classList.add('hidden');
+        document.querySelector('.content-panel')?.classList.add('hidden');
+        document.getElementById('room-session-panel')?.classList.remove('hidden');
+        document.getElementById('room-inside-panel')?.classList.remove('hidden');
+        document.getElementById('global-stage-copy')?.classList.add('hidden');
+        document.getElementById('room-stage-copy')?.classList.remove('hidden');
+
+        this.setText('active-room-name', room.name);
+        this.setText('active-room-code', room.roomCode);
+        this.setText('stage-room-name', room.name);
+        this.setText('stage-room-code', `코드 ${room.roomCode}`);
+        this.updateRoomParticipantCount(room.currentParticipants, room.maxParticipants);
+        this.updateRoomClosedState(room.status === 'CLOSED');
+
+        const label = document.getElementById('current-room-label');
+        if (label) label.textContent = `${room.name} 채팅 중`;
+        const input = document.getElementById('msg-input');
+        if (input) input.placeholder = `${room.name}에 메시지 보내기`;
+    },
+
+    showLobbyMode: function() {
+        document.querySelector('.app-main')?.classList.remove('room-mode');
+        document.getElementById('bamboo-forest')?.classList.remove('room-active');
+        document.querySelector('.room-hub')?.classList.remove('hidden');
+        document.getElementById('quick-info-grid')?.classList.remove('hidden');
+        document.querySelector('.content-panel')?.classList.remove('hidden');
+        document.getElementById('room-session-panel')?.classList.add('hidden');
+        document.getElementById('room-inside-panel')?.classList.add('hidden');
+        document.getElementById('global-stage-copy')?.classList.remove('hidden');
+        document.getElementById('room-stage-copy')?.classList.add('hidden');
+
+        const label = document.getElementById('current-room-label');
+        if (label) label.textContent = '전체 채팅';
+        const input = document.getElementById('msg-input');
+        if (input) input.placeholder = '익명으로 메시지를 남겨보세요';
+        this.setChatInputEnabled(true);
+    },
+
+    updateRoomParticipantCount: function(current, max) {
+        this.setText('active-room-count', `현재 접속자 ${current}명 / 최대 ${max}명`);
+        this.setText('stage-room-count', `현재 접속자 ${current}명`);
+        if (this.currentRoom) this.currentRoom.currentParticipants = current;
+    },
+
+    handleRoomMessage: function(chatMsg) {
+        const isSystem = chatMsg.messageType === 'SYSTEM' || chatMsg.senderIp === 'SYSTEM';
+        this.createBullet(chatMsg.content, chatMsg.senderIp, isSystem, chatMsg.senderClientId);
+
+        if (isSystem && this.isRoomClosedMessage(chatMsg.content)) {
+            this.markCurrentRoomClosed();
+        }
+    },
+
+    isRoomClosedMessage: function(content) {
+        const value = String(content || '');
+        return value.includes('채팅방이 종료') || value.includes('채팅방이 삭제') || value.includes('관리자에 의해 채팅방이 종료');
+    },
+
+    markCurrentRoomClosed: function() {
+        if (!this.currentRoomCode) return;
+        this.currentRoomClosed = true;
+        if (this.currentRoom) this.currentRoom.status = 'CLOSED';
+        this.updateRoomClosedState(true);
+        this.fetchRooms();
+    },
+
+    updateRoomClosedState: function(isClosed) {
+        this.currentRoomClosed = Boolean(isClosed);
+        this.setChatInputEnabled(!this.currentRoomClosed);
+
+        const label = document.getElementById('current-room-label');
+        if (label && this.currentRoomClosed) label.textContent = '채팅방 종료됨 (CLOSED)';
+
+        const badge = document.querySelector('.connected-badge');
+        if (badge) {
+            badge.innerHTML = this.currentRoomClosed
+                ? '<i class="fa-solid fa-circle"></i> CLOSED'
+                : '<i class="fa-solid fa-circle"></i> 연결됨';
+        }
+
+        const leaveButton = document.getElementById('btn-leave-room');
+        if (leaveButton) leaveButton.disabled = false;
+        const focusButton = document.getElementById('btn-focus-chat');
+        if (focusButton) focusButton.disabled = this.currentRoomClosed;
+    },
+
+    setChatInputEnabled: function(enabled) {
+        const input = document.getElementById('msg-input');
+        const button = document.querySelector('#msg-form button[type="submit"]');
+        if (input) {
+            input.disabled = !enabled;
+            input.placeholder = enabled
+                ? (this.currentRoom ? `${this.currentRoom.name}에 메시지 보내기` : '익명으로 메시지를 남겨보세요')
+                : '종료된 채팅방입니다.';
+        }
+        if (button) button.disabled = !enabled;
+    },
+
+    setText: function(id, value) {
+        const element = document.getElementById(id);
+        if (element) element.textContent = value;
+    },
+
+    copyCurrentRoomCode: async function() {
+        if (!this.currentRoomCode) return;
+        try {
+            await navigator.clipboard.writeText(this.currentRoomCode);
+            this.createBullet('방 코드를 복사했습니다.', 'SYSTEM', true);
+        } catch (error) {
+            this.createBullet(`방 코드: ${this.currentRoomCode}`, 'SYSTEM', true);
+        }
     },
 
     /**
@@ -457,12 +667,18 @@ const MAINJS = {
                 e.preventDefault();
                 const input = document.getElementById('msg-input');
                 const content = input.value.trim();
+                if (this.currentRoomClosed) {
+                    this.createBullet('방이 종료되어 메시지를 보낼 수 없습니다.', 'SYSTEM', true);
+                    return;
+                }
                 if (content && this.stompClient?.connected) {
                     const destination = this.currentRoomCode
                         ? `/app/rooms/${this.currentRoomCode}/chat/send`
                         : "/app/chat/send";
                     this.stompClient.send(destination, { clientId: this.clientId }, content);
                     input.value = '';
+                } else if (content) {
+                    this.createBullet('메시지 전송 실패: WebSocket 연결이 끊어졌습니다.', 'SYSTEM', true);
                 }
             });
         }
@@ -491,6 +707,23 @@ const MAINJS = {
                 this.joinRoomByCode();
             });
         }
+
+        document.getElementById('btn-refresh-rooms')?.addEventListener('click', () => this.fetchRooms(this.roomPage));
+        document.getElementById('btn-prev-rooms')?.addEventListener('click', () => {
+            if (this.roomPage > 0) this.fetchRooms(this.roomPage - 1);
+        });
+        document.getElementById('btn-next-rooms')?.addEventListener('click', () => {
+            if (this.roomPage < this.roomTotalPages - 1) this.fetchRooms(this.roomPage + 1);
+        });
+        document.getElementById('btn-global-room')?.addEventListener('click', () => this.leaveCurrentRoom());
+        document.getElementById('btn-leave-room')?.addEventListener('click', () => this.leaveCurrentRoom());
+        document.getElementById('btn-copy-room-code')?.addEventListener('click', () => this.copyCurrentRoomCode());
+        document.getElementById('btn-focus-chat')?.addEventListener('click', () => document.getElementById('msg-input')?.focus());
+        window.addEventListener('beforeunload', () => {
+            if (this.currentRoomCode && this.stompClient?.connected) {
+                this.stompClient.send(`/app/rooms/${this.currentRoomCode}/leave`, { clientId: this.clientId }, '');
+            }
+        });
     },
 
     /**
@@ -541,6 +774,10 @@ const MAINJS = {
             .replaceAll('>', '&gt;')
             .replaceAll('"', '&quot;')
             .replaceAll("'", '&#39;');
+    },
+
+    getErrorMessage: function(error) {
+        return error?.message || '요청을 처리하지 못했습니다.';
     },
 
     /**
@@ -609,6 +846,78 @@ const MAINJS = {
         container.appendChild(el);
         el.addEventListener('animationend', () => el.remove());
     }
+};
+
+MAINJS.fetchExtraData = async function() {
+    try {
+        const response = await COMMON_AJAX.get('/api/menu/init-data');
+        if (response.code === '0000') {
+            const data = response.result;
+            this.endTime = `${data.endTime}:00`;
+            const winner = document.getElementById('yesterday-winner');
+            if (winner) winner.textContent = `${data.yesterdayWinner} (${data.yesterdayVotes}표)`;
+        }
+    } catch (error) {
+        console.error('추가 데이터 로딩 실패', error);
+    }
+};
+
+MAINJS.renderVoting = function() {
+    const grid = document.getElementById('voting-grid');
+    if (!grid) return;
+    grid.innerHTML = '';
+
+    const totalVotes = this.battleItems.reduce((sum, item) => sum + (item.finalScore || 0), 0) || 1;
+    const sorted = [...this.battleItems].sort((a, b) => b.finalScore - a.finalScore);
+
+    if (!sorted.length) {
+        grid.innerHTML = '<div class="room-empty-state">아직 등록된 메뉴가 없습니다.<br>첫 후보를 추가해보세요.</div>';
+        return;
+    }
+
+    if (sorted[0].finalScore > 0) {
+        const currentTop = sorted[0];
+        if (this.prevTopId && this.prevTopId !== currentTop.id) {
+            this.createBullet(`[${currentTop.menuName}] 1위로 올라왔어요`, 'SYSTEM', true);
+        }
+        this.prevTopId = currentTop.id;
+    }
+
+    sorted.forEach((item, index) => {
+        const percent = Math.round(((item.finalScore || 0) / totalVotes) * 100);
+        const card = document.createElement('button');
+        card.type = 'button';
+        card.className = `battle-card ${index === 0 && item.finalScore > 0 ? 'rank-1' : ''}`;
+        card.addEventListener('click', () => this.vote(item.id, item.menuName));
+        card.innerHTML = `
+            <span class="menu-rank">#${String(index + 1).padStart(2, '0')}</span>
+            <h4 class="menu-title">${this.escapeHtml(item.menuName)}</h4>
+            <div class="menu-score"><span>${item.finalScore || 0}표</span><strong>${percent}%</strong></div>
+            <div class="progress-container"><div class="progress-bar" style="width:${percent}%"></div></div>
+        `;
+        grid.appendChild(card);
+    });
+};
+
+MAINJS.renderResults = function() {
+    const sorted = [...this.battleItems].sort((a, b) => b.finalScore - a.finalScore);
+    document.getElementById('rank-1-name').textContent = sorted[0]?.menuName || '-';
+    document.getElementById('rank-2-name').textContent = sorted[1]?.menuName || '-';
+    document.getElementById('rank-3-name').textContent = sorted[2]?.menuName || '-';
+
+    const list = document.getElementById('ranking-list');
+    if (!list) return;
+    list.innerHTML = '';
+    sorted.forEach((item, index) => {
+        const row = document.createElement('div');
+        row.className = 'ranking-row';
+        const name = document.createElement('span');
+        name.textContent = `#${index + 1} ${item.menuName}`;
+        const score = document.createElement('strong');
+        score.textContent = `${item.finalScore || 0}표`;
+        row.append(name, score);
+        list.appendChild(row);
+    });
 };
 
 document.addEventListener('DOMContentLoaded', () => {

@@ -28,6 +28,8 @@ public class ChatMessage {
 
     private String roomCode;
 
+    private String messageType;
+
     /**
      * 메시지 내용
      */
@@ -65,6 +67,18 @@ public class ChatMessage {
                 .senderGuestId(senderGuestId)
                 .senderClientId(senderClientId)
                 .roomCode(roomCode)
+                .messageType("CHAT")
+                .content(content)
+                .ttl(5)
+                .timestamp(LocalDateTime.now())
+                .build();
+    }
+
+    public static ChatMessage system(String roomCode, String content) {
+        return ChatMessage.builder()
+                .senderIp("SYSTEM")
+                .roomCode(roomCode)
+                .messageType("SYSTEM")
                 .content(content)
                 .ttl(5)
                 .timestamp(LocalDateTime.now())

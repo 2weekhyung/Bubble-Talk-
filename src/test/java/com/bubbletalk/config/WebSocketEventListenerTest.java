@@ -2,6 +2,7 @@ package com.bubbletalk.config;
 
 import com.bubbletalk.chatroom.service.ChatRoomService;
 import com.bubbletalk.global.constant.RedisKey;
+import com.bubbletalk.securitylog.service.SecurityEventLogService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -35,6 +36,9 @@ class WebSocketEventListenerTest {
     private ActiveWebSocketSessionRegistry activeSessionRegistry;
 
     @Mock
+    private SecurityEventLogService securityEventLogService;
+
+    @Mock
     private SessionDisconnectEvent disconnectEvent;
 
     @Test
@@ -49,7 +53,8 @@ class WebSocketEventListenerTest {
                         redisTemplate,
                         messagingTemplate,
                         chatRoomService,
-                        activeSessionRegistry
+                        activeSessionRegistry,
+                        securityEventLogService
                 );
         listener.handleWebSocketDisconnectListener(disconnectEvent);
 

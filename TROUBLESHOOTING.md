@@ -747,3 +747,111 @@
 
 ---
 *(이후 작업 내용에 따라 지속적으로 업데이트 예정)*
+### 채팅방 상태 피드백 부족 문제 개선
+
+- **문제**:
+    - 방 생성/입장/퇴장/종료 상태가 화면에 명확히 표시되지 않아 사용자가 현재 상태를 알기 어려웠음.
+- **원인**:
+    - 주요 상태 변화가 WebSocket 시스템 메시지나 UI 상태 변경으로 충분히 연결되지 않았음.
+- **해결**:
+    - 방 생성/입장 후 화면 전환과 성공·실패 피드백을 보강함.
+    - 입장/퇴장/종료 시스템 메시지를 `messageType=SYSTEM`으로 구분해 방 topic에 전달하도록 개선함.
+    - 방 종료 이벤트 수신 시 사용자 화면에 CLOSED 상태를 표시하고 메시지 입력창과 전송 버튼을 비활성화함.
+- **결과**:
+    - 사용자가 채팅방의 현재 상태를 명확히 인지할 수 있게 되었고, 운영 중 혼란을 줄일 수 있었음.
+- **적용 파일**:
+    - `ChatMessage.java`, `ChatSocketController.java`, `WebSocketEventListener.java`, `AdminDashboardService.java`, `main.js`
+
+## 사용자 행위 로그 수집 구조 도입
+
+- **문제**:
+    - 기존에는 사용자의 방 생성, 입장, 퇴장, 메시지 전송, 투표, 방 종료 흐름이 DB 로그로 남지 않아 운영자가 사용자 행위 흐름을 추적하기 어려웠음.
+- **원인**:
+    - 실시간 채팅 이벤트는 WebSocket으로 처리되지만, 주요 이벤트를 별도 보안/운영 로그 테이블에 저장하는 구조가 없었음.
+- **해결**:
+    - `SecurityEventLog` Entity와 공통 로그 저장 서비스를 추가하고, 주요 사용자 행위 및 관리자 조작 이벤트를 `EventType`/`Severity` 기반으로 저장하도록 개선함.
+    - dev 프로파일에는 별도 `ddl-auto`가 없으므로 로컬 DB에서는 아래 DDL로 테이블을 생성할 수 있음.
+```sql
+CREATE TABLE security_event_log (
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    event_type VARCHAR(50) NOT NULL,
+    severity VARCHAR(20) NOT NULL,
+    room_code VARCHAR(100),
+    guest_id VARCHAR(100),
+    ip_address VARCHAR(100),
+    user_agent VARCHAR(500),
+    request_uri VARCHAR(500),
+    reason VARCHAR(1000),
+    created_at DATETIME NOT NULL,
+    PRIMARY KEY (id),
+    INDEX idx_security_event_created_at (created_at),
+    INDEX idx_security_event_type (event_type),
+    INDEX idx_security_event_room_code (room_code),
+    INDEX idx_security_event_guest_id (guest_id),
+    INDEX idx_security_event_ip_address (ip_address)
+);
+```
+- **결과**:
+    - 관리자 페이지에서 GuestId, IP, 이벤트 유형, 방 코드 기준으로 사용자 행위 로그를 조회할 수 있게 되었고, 향후 Rate Limit이나 차단 정책 같은 보안 기능을 확장할 수 있는 기반을 마련함.
+- **적용 파일**:
+    - `securitylog/**`, `ChatRoomRestController.java`, `ChatSocketController.java`, `WebSocketEventListener.java`, `MenuRestController.java`, `AdminDashboardService.java`, `RealtimeSessionCleanupService.java`, `AdminDashBoardRestController.java`, `dashboard.html`, `admin.js`
+
+## 로그 저장 실패가 서비스 로직에 영향을 주지 않도록 처리
+
+- **문제**:
+    - 로그 저장 기능을 주요 서비스 흐름에 직접 연결하면, 로그 저장 실패가 채팅/투표 기능 장애로 이어질 수 있음.
+- **원인**:
+    - 로그 저장 로직이 핵심 서비스 로직과 강하게 결합될 경우 예외 전파 위험이 있음.
+- **해결**:
+    - `SecurityEventLogService` 내부에서 로그 저장 예외를 처리하고, 실패 시 warn 로그만 남기며 기존 서비스 로직은 계속 진행되도록 구성함.
+- **결과**:
+    - 보안 이벤트 로그 수집 기능을 추가하면서도 기존 채팅/투표/방 종료 기능의 안정성을 유지함.
+
+## 방 생성 후 입장 실패 문제
+
+- **문제**:
+    - 채팅방 생성 후 `방 만들고 입장하기`를 누르면 방 화면으로 정상 전환되지 않거나 API가 500으로 실패하는 문제가 발생함.
+- **원인**:
+    - `SecurityEventLogService` 클래스 전체에 `@Transactional(readOnly = true)`가 적용되어 있었음.
+    - `HttpServletRequest`를 받는 `logEvent()` 오버로드가 read-only 트랜잭션으로 실행된 상태에서 `security_event_log` insert를 시도함.
+    - MySQL에서 `Connection is read-only. Queries leading to data modification are not allowed` 예외가 발생했고, 로그 저장 실패가 방 생성/입장 흐름까지 rollback시키는 문제가 있었음.
+- **해결**:
+    - 클래스 레벨 read-only 트랜잭션을 제거함.
+    - 로그 저장 메서드에는 쓰기 트랜잭션을 적용하고, 로그 조회 메서드에만 `@Transactional(readOnly = true)`를 적용함.
+    - 로그 저장 실패가 핵심 기능을 막지 않도록 `noRollbackFor = RuntimeException.class`와 내부 예외 처리를 유지함.
+- **결과**:
+    - 방 생성 후 입장 API가 로그 저장 트랜잭션 문제로 실패하지 않도록 수정함.
+    - 보안 이벤트 로그는 계속 저장하되, 로그 저장 실패가 사용자 기능 장애로 번지지 않게 분리함.
+- **적용 파일**:
+    - `SecurityEventLogService.java`
+
+## 방 생성 후 방 코드 알림 중복 표시
+
+- **문제**:
+    - `방 만들고 입장하기` 버튼을 누르면 방 코드가 포함된 안내 메시지가 두 번 이상 표시되어 사용자가 중복 생성으로 오해할 수 있었음.
+- **원인**:
+    - 방 생성 성공 시 `createRoom()`에서 생성 알림을 띄우고, 이어서 `joinRoom()`에서 입장 알림을 다시 띄움.
+    - `enterRoom()`에서도 방금 생성한 방인지 확인한 뒤 추가 안내 메시지를 출력하고 있었음.
+- **해결**:
+    - 방 생성 직후 자동 입장 흐름에서는 생성 알림과 입장 알림을 하나로 합침.
+    - `enterRoom()`의 추가 생성 완료 알림은 제거하고 `justCreatedRoomCode` 상태만 정리하도록 변경함.
+- **결과**:
+    - 방 생성과 입장이 하나의 사용자 액션으로 보이도록 정리되어, 방 코드 안내가 한 번만 표시됨.
+- **적용 파일**:
+    - `main.js`
+
+## 공개 채팅방 목록 과다 노출 문제
+
+- **문제**:
+    - 공개 채팅방이 많이 생성되면 메인 화면의 공개방 목록에 모든 방이 한 번에 표시되어 화면이 길어지고 탐색성이 떨어졌음.
+- **원인**:
+    - `/api/rooms` API가 공개방 전체 목록을 `List`로 반환하고, 프론트에서도 전체 결과를 그대로 렌더링하고 있었음.
+- **해결**:
+    - 공개방 목록 API를 `page`, `size` 기반 페이지 응답으로 변경함.
+    - 기본 size는 10개로 제한하고, 최신 생성순(`createdDate desc`)으로 조회함.
+    - 프론트에 현재 페이지, 전체 페이지, 이전/다음 버튼을 추가함.
+    - 방 생성 후에는 새 방이 보이도록 1페이지로 돌아가 목록을 갱신함.
+- **결과**:
+    - 공개 채팅방 목록이 10개씩 나뉘어 표시되어 화면 밀도를 유지하면서 최근 생성 방 중심으로 탐색할 수 있게 됨.
+- **적용 파일**:
+    - `ChatRoomRepository.java`, `ChatRoomService.java`, `ChatRoomRestController.java`, `main.html`, `main.css`, `main.js`, `ChatRoomServiceTest.java`

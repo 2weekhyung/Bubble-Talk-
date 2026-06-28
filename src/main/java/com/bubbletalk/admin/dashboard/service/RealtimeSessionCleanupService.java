@@ -4,6 +4,9 @@ import com.bubbletalk.admin.dashboard.dto.StaleSessionCleanupResDto;
 import com.bubbletalk.chatroom.service.ChatRoomService;
 import com.bubbletalk.config.ActiveWebSocketSessionRegistry;
 import com.bubbletalk.global.constant.RedisKey;
+import com.bubbletalk.securitylog.entity.EventType;
+import com.bubbletalk.securitylog.entity.Severity;
+import com.bubbletalk.securitylog.service.SecurityEventLogService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -22,12 +25,34 @@ public class RealtimeSessionCleanupService {
     private final RedisTemplate<String, Object> redisTemplate;
     private final ActiveWebSocketSessionRegistry activeSessionRegistry;
     private final ChatRoomService chatRoomService;
+    private final SecurityEventLogService securityEventLogService;
 
     public StaleSessionCleanupResDto cleanupStaleSessions() {
         try {
-            return performCleanup();
+            StaleSessionCleanupResDto result = performCleanup();
+            securityEventLogService.logEvent(
+                    EventType.STALE_SESSION_CLEANUP,
+                    Severity.WARN,
+                    null,
+                    null,
+                    null,
+                    null,
+                    "/api/admin/realtime/cleanup-stale-sessions",
+                    "비정상 세션 정리"
+            );
+            return result;
         } catch (RuntimeException e) {
             log.warn("stale session cleanup failed because Redis is unavailable", e);
+            securityEventLogService.logEvent(
+                    EventType.STALE_SESSION_CLEANUP,
+                    Severity.WARN,
+                    null,
+                    null,
+                    null,
+                    null,
+                    "/api/admin/realtime/cleanup-stale-sessions",
+                    "비정상 세션 정리 실패"
+            );
             return StaleSessionCleanupResDto.builder()
                     .scannedSessions(0)
                     .removedSessions(0)

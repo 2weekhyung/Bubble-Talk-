@@ -39,6 +39,8 @@ public enum RedisKey {
 
     ROOM("room:"),
 
+    ROOM_CREATE_RATELIMIT("room:create:ratelimit:"),
+
     ROOM_SESSION_ROOMS("room:session:rooms:"),
 
     /**

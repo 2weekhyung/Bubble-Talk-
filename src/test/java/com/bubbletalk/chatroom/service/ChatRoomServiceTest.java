@@ -7,6 +7,9 @@ import com.bubbletalk.chatroom.entity.RoomStatus;
 import com.bubbletalk.chatroom.repository.ChatRoomRepository;
 import com.bubbletalk.global.constant.RedisKey;
 import com.bubbletalk.global.exception.BusinessException;
+import com.bubbletalk.securitylog.entity.EventType;
+import com.bubbletalk.securitylog.entity.Severity;
+import com.bubbletalk.securitylog.service.SecurityEventLogService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -15,9 +18,12 @@ import org.mockito.Mock;
 import org.mockito.ArgumentCaptor;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.HashOperations;
 import org.springframework.data.redis.core.SetOperations;
+import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.data.redis.core.script.RedisScript;
 
 import java.util.List;
@@ -25,6 +31,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.time.LocalDateTime;
 import java.util.Collection;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -33,6 +40,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.startsWith;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -54,11 +62,17 @@ class ChatRoomServiceTest {
     @Mock
     private HashOperations<String, Object, Object> hashOperations;
 
+    @Mock
+    private ValueOperations<String, Object> valueOperations;
+
+    @Mock
+    private SecurityEventLogService securityEventLogService;
+
     private ChatRoomService chatRoomService;
 
     @BeforeEach
     void setUp() {
-        chatRoomService = new ChatRoomService(chatRoomRepository, redisTemplate);
+        chatRoomService = new ChatRoomService(chatRoomRepository, redisTemplate, securityEventLogService);
     }
 
     @Test
@@ -105,6 +119,44 @@ class ChatRoomServiceTest {
     }
 
     @Test
+    @DisplayName("room creation with requester is rate limited by Redis")
+    void createRoom_WithRequesterUsesRateLimit() {
+        ChatRoomCreateReqDto req = createReq("room", null, false, 10);
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.setIfAbsent(
+                eq(RedisKey.ROOM_CREATE_RATELIMIT.with("guest:abc")),
+                eq("1"),
+                eq(30L),
+                eq(TimeUnit.SECONDS)
+        )).thenReturn(true);
+        when(chatRoomRepository.saveAndFlush(any(ChatRoom.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        mockAnyRoomSize(0L);
+
+        ChatRoomResDto result = chatRoomService.createRoom(req, "guest:abc");
+
+        assertEquals("room", result.getName());
+        verify(valueOperations).setIfAbsent(
+                RedisKey.ROOM_CREATE_RATELIMIT.with("guest:abc"),
+                "1",
+                30L,
+                TimeUnit.SECONDS
+        );
+    }
+
+    @Test
+    @DisplayName("room creation is rejected when requester creates too frequently")
+    void createRoom_RateLimitRejects() {
+        ChatRoomCreateReqDto req = createReq("room", null, false, 10);
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.setIfAbsent(anyString(), eq("1"), eq(30L), eq(TimeUnit.SECONDS)))
+                .thenReturn(false);
+
+        assertThrows(BusinessException.class, () -> chatRoomService.createRoom(req, "guest:abc"));
+
+        verify(chatRoomRepository, never()).saveAndFlush(any(ChatRoom.class));
+    }
+
+    @Test
     @DisplayName("blank room name fails")
     void createRoom_BlankNameFails() {
         assertThrows(BusinessException.class, () -> chatRoomService.createRoom(createReq(" ", null, false, 10)));
@@ -135,6 +187,22 @@ class ChatRoomServiceTest {
         assertEquals(1, result.size());
         assertEquals("PUBLIC01", result.get(0).getRoomCode());
         assertEquals(2L, result.get(0).getCurrentParticipants());
+    }
+
+    @Test
+    @DisplayName("public room page returns latest public rooms with paging metadata")
+    void getPublicRooms_Page() {
+        ChatRoom publicRoom = room("PUBLIC01", "공개방", false, 10);
+        PageRequest pageable = PageRequest.of(0, 10);
+        when(chatRoomRepository.findByPrivateRoomFalseAndStatusNotOrderByCreatedDateDesc(RoomStatus.CLOSED, pageable))
+                .thenReturn(new PageImpl<>(List.of(publicRoom), pageable, 1));
+        mockRoomSize(roomSessionsKey("PUBLIC01"), 1L);
+
+        var result = chatRoomService.getPublicRooms(pageable);
+
+        assertEquals(1, result.getTotalElements());
+        assertEquals("PUBLIC01", result.getContent().get(0).getRoomCode());
+        assertEquals(1L, result.getContent().get(0).getCurrentParticipants());
     }
 
     @Test
@@ -210,6 +278,16 @@ class ChatRoomServiceTest {
         assertTrue(keysCaptor.getValue().contains(RedisKey.roomSessions("ROOM0001")));
         assertTrue(keysCaptor.getValue().contains(RedisKey.roomGuests("ROOM0001")));
         assertTrue(keysCaptor.getValue().contains(RedisKey.roomSessionActors("ROOM0001")));
+        verify(securityEventLogService).logEvent(
+                EventType.ROOM_CLOSED,
+                Severity.WARN,
+                "ROOM0001",
+                null,
+                null,
+                null,
+                null,
+                "채팅방 종료"
+        );
     }
 
     @Test

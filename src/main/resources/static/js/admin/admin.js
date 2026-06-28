@@ -12,6 +12,7 @@ const ADMIN = {
         this.fetchEventStatus();
         this.fetchLunchTimes(); // 추가
         this.fetchHistory();
+        this.fetchSecurityEvents();
         this.connectWebSocket();
     },
 
@@ -270,6 +271,68 @@ const ADMIN = {
         }
     },
 
+    fetchSecurityEvents: async function() {
+        const params = new URLSearchParams();
+        this.appendParam(params, 'eventType', document.getElementById('security-event-type')?.value);
+        this.appendParam(params, 'severity', document.getElementById('security-severity')?.value);
+        this.appendParam(params, 'roomCode', document.getElementById('security-room-code')?.value);
+        this.appendParam(params, 'guestId', document.getElementById('security-guest-id')?.value);
+        this.appendParam(params, 'ipAddress', document.getElementById('security-ip-address')?.value);
+        params.set('size', '20');
+        params.set('sort', 'createdAt,desc');
+
+        try {
+            const response = await COMMON_AJAX.get(`/api/admin/security-events?${params.toString()}`);
+            if (response.code === '0000') {
+                this.renderSecurityEvents(response.result?.content || []);
+            } else {
+                alert(response.message || '보안 이벤트 로그 조회 실패');
+            }
+        } catch (e) {
+            alert('보안 이벤트 로그 조회 실패: ' + e.message);
+        }
+    },
+
+    appendParam: function(params, key, value) {
+        if (value && String(value).trim()) {
+            params.set(key, String(value).trim());
+        }
+    },
+
+    renderSecurityEvents: function(events) {
+        const list = document.getElementById('security-event-list');
+        if (!list) return;
+        list.innerHTML = '';
+
+        if (!events.length) {
+            const tr = document.createElement('tr');
+            const td = document.createElement('td');
+            td.colSpan = 7;
+            td.textContent = '표시할 보안 이벤트 로그가 없습니다.';
+            tr.appendChild(td);
+            list.appendChild(tr);
+            return;
+        }
+
+        events.forEach(event => {
+            const tr = document.createElement('tr');
+            [
+                this.formatDateTime(event.createdAt),
+                event.eventType,
+                event.severity,
+                event.roomCode || '-',
+                event.guestId || '-',
+                event.ipAddress || '-',
+                event.reason || '-'
+            ].forEach(value => {
+                const td = document.createElement('td');
+                td.textContent = value;
+                tr.appendChild(td);
+            });
+            list.appendChild(tr);
+        });
+    },
+
     formatDateTime: function(value) {
         if (!value) return '-';
         return new Date(value).toLocaleString('ko-KR', { hour12: false });
@@ -458,6 +521,73 @@ const ADMIN = {
         const h = Math.abs(hash % 360);
         return `hsl(${h}, 70%, 70%)`;
     }
+};
+
+ADMIN.updateRedisStatus = function(available) {
+    const badge = document.getElementById('admin-redis-status');
+    if (!badge) return;
+    badge.textContent = available ? 'Redis 정상' : 'Redis 오류';
+    badge.className = available ? 'status-badge status-ok' : 'status-badge status-error';
+};
+
+ADMIN.renderRooms = function(rooms) {
+    const list = document.getElementById('admin-room-list');
+    if (!list) return;
+    list.innerHTML = '';
+
+    rooms.forEach(room => {
+        const tr = document.createElement('tr');
+        [
+            room.roomCode,
+            room.name,
+            room.privateRoom ? '비공개' : '공개',
+            room.status,
+            `${room.currentParticipants}/${room.maxParticipants}`,
+            this.formatDateTime(room.createdAt),
+            this.formatDateTime(room.closedAt)
+        ].forEach(value => {
+            const td = document.createElement('td');
+            td.textContent = value ?? '-';
+            tr.appendChild(td);
+        });
+
+        const actionCell = document.createElement('td');
+        if (room.status !== 'CLOSED') {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'admin-room-close';
+            button.textContent = '종료';
+            button.addEventListener('click', () => this.closeRoom(room.roomCode));
+            actionCell.appendChild(button);
+        } else {
+            actionCell.textContent = '-';
+        }
+        tr.appendChild(actionCell);
+        list.appendChild(tr);
+    });
+};
+
+ADMIN.updateStatusUI = function(status) {
+    const open = document.getElementById('btn-status-open');
+    const closed = document.getElementById('btn-status-closed');
+    if (!open || !closed) return;
+    open.className = status === 'OPEN' ? 'is-open' : '';
+    closed.className = status === 'CLOSED' ? 'is-closed' : '';
+};
+
+ADMIN.renderHistory = function(histories) {
+    const list = document.getElementById('lunch-history-list');
+    if (!list) return;
+    list.innerHTML = '';
+    histories.filter(item => item.ranking === 1).forEach(item => {
+        const tr = document.createElement('tr');
+        [item.targetDate, item.menuName, `${item.voteCount}표`].forEach(value => {
+            const td = document.createElement('td');
+            td.textContent = value;
+            tr.appendChild(td);
+        });
+        list.appendChild(tr);
+    });
 };
 
 document.addEventListener('DOMContentLoaded', () => ADMIN.init());

@@ -6,141 +6,173 @@
 
 <th:block layout:fragment="content">
     <script th:inline="javascript">
-        /*<![CDATA[*/
         const CLIENT_IP = /*[[${clientIp}]]*/ 'unknown';
-        /*]]>*/
     </script>
 
     <section id="bamboo-forest" class="bubble-stage">
-        <div class="stage-copy">
-            <span class="eyebrow">Anonymous chat</span>
-            <h2>점심 얘기는 가볍게, 투표는 바로.</h2>
+        <div id="global-stage-copy" class="stage-copy">
+            <span class="eyebrow">실시간 익명 채팅</span>
+            <h2>가볍게 이야기하고,<br>오늘의 점심도 함께 골라요.</h2>
         </div>
-        <div id="bullet-container" class="bullet-layer"></div>
+        <div id="room-stage-copy" class="room-stage-copy hidden">
+            <span class="room-live-badge"><i class="fa-solid fa-circle"></i> ROOM LIVE</span>
+            <h2 id="stage-room-name">채팅방</h2>
+            <p><span id="stage-room-code">--------</span> · <span id="stage-room-count">0 / 0명</span></p>
+        </div>
+        <div id="bullet-container" class="bullet-layer" aria-live="polite"></div>
         <div class="chat-input-wrap">
+            <div id="chat-context" class="chat-context">
+                <span class="context-dot"></span>
+                <span id="current-room-label">전체 채팅</span>
+            </div>
             <form id="msg-form" class="chat-form">
-                <input type="text" id="msg-input" placeholder="익명으로 한마디 남기기">
-                <button type="submit" aria-label="메시지 보내기">
-                    <i class="fa-solid fa-arrow-up"></i>
-                </button>
+                <input type="text" id="msg-input" maxlength="200" placeholder="익명으로 메시지를 남겨보세요">
+                <button type="submit" aria-label="메시지 보내기"><i class="fa-solid fa-arrow-up"></i></button>
             </form>
         </div>
     </section>
 
-    <div id="h-resizer" class="stage-resizer">
-        <div></div>
-    </div>
+    <div id="h-resizer" class="stage-resizer"><div></div></div>
 
     <main class="app-main custom-scroll">
         <aside class="side-panel">
-            <section class="info-card time-card">
-                <div class="info-icon coral">
-                    <i class="fa-solid fa-clock"></i>
+            <section class="room-hub">
+                <div class="room-hub-head">
+                    <div>
+                        <span class="eyebrow">Chat rooms</span>
+                        <h2>대화할 방을 선택하세요</h2>
+                        <p>공개방에 바로 들어가거나 새 방을 만들 수 있어요.</p>
+                    </div>
+                    <button id="btn-global-room" type="button" class="room-home-btn">
+                        <i class="fa-solid fa-house"></i> 전체 채팅
+                    </button>
                 </div>
-                <div>
-                    <span>남은 시간</span>
-                    <strong id="war-timer">--:--:--</strong>
+
+                <div class="room-actions">
+                    <form id="room-create-form" class="room-create-form">
+                        <div class="form-title">
+                            <span class="step-number">1</span>
+                            <div><strong>새 채팅방 만들기</strong><small>방 이름과 인원만 정하면 바로 시작합니다.</small></div>
+                        </div>
+                        <label class="field-label" for="room-name-input">방 이름</label>
+                        <input type="text" id="room-name-input" maxlength="100" placeholder="예: 오늘 뭐 먹지?">
+                        <div class="room-options">
+                            <label><span>최대 인원</span><input type="number" id="room-max-input" min="2" max="50" value="10"></label>
+                            <label class="private-toggle">
+                                <input type="checkbox" id="room-private-input">
+                                <span><i class="fa-solid fa-lock"></i> 비공개 방</span>
+                            </label>
+                        </div>
+                        <button type="submit" class="primary-action"><i class="fa-solid fa-plus"></i> 방 만들고 입장하기</button>
+                    </form>
+
+                    <form id="room-code-form" class="room-code-form">
+                        <div class="form-title compact">
+                            <span class="step-number muted">2</span>
+                            <div><strong>초대 코드로 입장</strong><small>비공개 방은 8자리 코드를 입력하세요.</small></div>
+                        </div>
+                        <div class="code-input-row">
+                            <input type="text" id="room-code-input" maxlength="8" placeholder="방 코드 8자리">
+                            <button type="submit">입장</button>
+                        </div>
+                    </form>
+                </div>
+
+                <div class="public-room-section">
+                    <div class="section-title-row">
+                        <div><strong>지금 열린 공개방</strong><span id="room-list-count">0개</span></div>
+                        <button id="btn-refresh-rooms" type="button" aria-label="채팅방 새로고침"><i class="fa-solid fa-rotate"></i></button>
+                    </div>
+                    <div id="room-list" class="room-list"></div>
+                    <div class="room-pagination">
+                        <button id="btn-prev-rooms" type="button" aria-label="이전 채팅방 목록"><i class="fa-solid fa-chevron-left"></i></button>
+                        <span id="room-page-label">1 / 1</span>
+                        <button id="btn-next-rooms" type="button" aria-label="다음 채팅방 목록"><i class="fa-solid fa-chevron-right"></i></button>
+                    </div>
                 </div>
             </section>
 
-            <section class="info-card">
-                <div class="info-icon yellow">
-                    <i class="fa-solid fa-crown"></i>
+            <section id="room-session-panel" class="room-session-panel hidden">
+                <div class="room-session-hero">
+                    <div class="room-session-icon"><i class="fa-solid fa-comments"></i></div>
+                    <div>
+                        <span>현재 참여 중인 채팅방</span>
+                        <h2 id="active-room-name">채팅방</h2>
+                    </div>
+                    <span class="connected-badge"><i class="fa-solid fa-circle"></i> 연결됨</span>
                 </div>
-                <div>
-                    <span>어제의 메뉴</span>
-                    <strong id="yesterday-winner">불러오는 중</strong>
+                <div class="room-session-details">
+                    <div>
+                        <span>방 코드</span>
+                        <strong id="active-room-code">--------</strong>
+                    </div>
+                    <button id="btn-copy-room-code" type="button"><i class="fa-regular fa-copy"></i> 코드 복사</button>
+                    <div>
+                        <span>참여 인원</span>
+                        <strong id="active-room-count">0 / 0명</strong>
+                    </div>
                 </div>
+                <div class="room-session-guide">
+                    <i class="fa-solid fa-circle-info"></i>
+                    <p>위 채팅창의 메시지는 현재 이 방에 참여한 사람에게만 보입니다.</p>
+                </div>
+                <button id="btn-leave-room" type="button" class="leave-room-btn">
+                    <i class="fa-solid fa-arrow-right-from-bracket"></i> 채팅방 나가기
+                </button>
             </section>
 
-            <section class="note-panel">
-                <h3>오늘 규칙</h3>
-                <p>메뉴 추가는 0표로 등록되고, 투표는 메뉴마다 한 번씩 가능합니다.</p>
-            </section>
-            <section class="note-panel">
-                <h3>채팅방</h3>
-                <form id="room-create-form" class="add-menu-form">
-                    <input type="text" id="room-name-input" placeholder="방 이름">
-                    <input type="number" id="room-max-input" min="2" max="50" value="10" aria-label="최대 인원">
-                    <label>
-                        <input type="checkbox" id="room-private-input">
-                        비밀방
-                    </label>
-                    <button type="submit">생성</button>
-                </form>
-                <form id="room-code-form" class="add-menu-form">
-                    <input type="text" id="room-code-input" placeholder="방 코드">
-                    <button type="submit">입장</button>
-                </form>
-                <div id="current-room-label">전역 채팅</div>
-                <div id="room-list"></div>
-            </section>
+            <div id="quick-info-grid" class="quick-info-grid">
+                <section class="info-card time-card">
+                    <div class="info-icon coral"><i class="fa-solid fa-clock"></i></div>
+                    <div><span>투표 종료까지</span><strong id="war-timer">--:--:--</strong></div>
+                </section>
+                <section class="info-card">
+                    <div class="info-icon yellow"><i class="fa-solid fa-crown"></i></div>
+                    <div><span>어제의 메뉴</span><strong id="yesterday-winner">불러오는 중</strong></div>
+                </section>
+            </div>
         </aside>
 
         <section class="content-panel">
             <div id="state-locked" class="state-panel hidden">
-                <div class="state-icon">
-                    <i class="fa-solid fa-hourglass-start"></i>
-                </div>
-                <h2>투표 대기 중</h2>
-                <p>관리자가 투표를 열면 메뉴를 추가하고 투표할 수 있습니다.</p>
+                <div class="state-icon"><i class="fa-solid fa-hourglass-start"></i></div>
+                <h2>투표 준비 중이에요</h2>
+                <p>관리자가 투표를 열면 메뉴를 추가하고 선택할 수 있습니다.</p>
             </div>
 
             <div id="state-voting" class="vote-panel">
                 <div class="panel-head">
-                    <div>
-                        <span class="eyebrow">Lunch board</span>
-                        <h2>오늘의 점심 후보</h2>
-                    </div>
-                    <div class="board-badge">
-                        <i class="fa-solid fa-utensils"></i>
-                        실시간 투표
-                    </div>
+                    <div><span class="eyebrow">Lunch board</span><h2>오늘의 점심 후보</h2></div>
+                    <div class="board-badge"><i class="fa-solid fa-utensils"></i> 실시간 투표</div>
                 </div>
-
                 <form id="add-menu-form" class="add-menu-form">
-                    <input type="text" id="add-menu-input" placeholder="메뉴 후보 추가하기">
-                    <button type="submit">
-                        <i class="fa-solid fa-plus"></i>
-                        추가
-                    </button>
+                    <input type="text" id="add-menu-input" placeholder="먹고 싶은 메뉴를 추가하세요">
+                    <button type="submit"><i class="fa-solid fa-plus"></i> 후보 추가</button>
                 </form>
-
-                <div id="voting-grid" class="menu-grid">
-                </div>
+                <div id="voting-grid" class="menu-grid"></div>
             </div>
 
             <div id="state-finished" class="result-panel hidden">
-                <div class="panel-head centered">
-                    <span class="eyebrow">Final result</span>
-                    <h2>오늘의 선택</h2>
-                </div>
-
+                <div class="panel-head centered"><span class="eyebrow">Final result</span><h2>오늘의 선택</h2></div>
                 <div class="podium-wrap">
-                    <div class="podium-item second">
-                        <span id="rank-2-name">-</span>
-                        <div class="podium-bar podium-2">2</div>
-                    </div>
-                    <div class="podium-item first">
-                        <i class="fa-solid fa-crown"></i>
-                        <span id="rank-1-name">-</span>
-                        <div class="podium-bar podium-1">1</div>
-                    </div>
-                    <div class="podium-item third">
-                        <span id="rank-3-name">-</span>
-                        <div class="podium-bar podium-3">3</div>
-                    </div>
+                    <div class="podium-item second"><span id="rank-2-name">-</span><div class="podium-bar podium-2">2</div></div>
+                    <div class="podium-item first"><i class="fa-solid fa-crown"></i><span id="rank-1-name">-</span><div class="podium-bar podium-1">1</div></div>
+                    <div class="podium-item third"><span id="rank-3-name">-</span><div class="podium-bar podium-3">3</div></div>
                 </div>
-
-                <div id="full-ranking" class="ranking-list hidden">
-                    <h4>전체 순위</h4>
-                    <div id="ranking-list"></div>
-                </div>
-
+                <div id="full-ranking" class="ranking-list hidden"><h4>전체 순위</h4><div id="ranking-list"></div></div>
                 <button id="btn-show-more" onclick="MAINJS.showFullRanking()" class="show-more-btn">
-                    전체 순위 보기
-                    <i class="fa-solid fa-chevron-down"></i>
+                    전체 순위 보기 <i class="fa-solid fa-chevron-down"></i>
                 </button>
+            </div>
+        </section>
+
+        <section id="room-inside-panel" class="room-inside-panel hidden">
+            <div class="room-inside-visual">
+                <div class="room-inside-rings"><i class="fa-solid fa-comment-dots"></i></div>
+                <span class="eyebrow">Private conversation</span>
+                <h2>채팅방에 입장했습니다</h2>
+                <p>상단 채팅창에서 이 방의 참여자들과 대화를 시작하세요.</p>
+                <button id="btn-focus-chat" type="button"><i class="fa-solid fa-arrow-up"></i> 메시지 입력하러 가기</button>
             </div>
         </section>
     </main>

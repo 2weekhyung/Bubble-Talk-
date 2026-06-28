@@ -2,6 +2,8 @@ package com.bubbletalk.chatroom.repository;
 
 import com.bubbletalk.chatroom.entity.ChatRoom;
 import com.bubbletalk.chatroom.entity.RoomStatus;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
@@ -13,6 +15,8 @@ public interface ChatRoomRepository extends JpaRepository<ChatRoom, Long> {
     Optional<ChatRoom> findByRoomCode(String roomCode);
 
     List<ChatRoom> findByPrivateRoomFalseAndStatusNotOrderByCreatedDateDesc(RoomStatus status);
+
+    Page<ChatRoom> findByPrivateRoomFalseAndStatusNotOrderByCreatedDateDesc(RoomStatus status, Pageable pageable);
 
     List<ChatRoom> findAllByOrderByCreatedDateDesc();
 }

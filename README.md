@@ -1,204 +1,188 @@
 # LiveOpsBoard
 
-**Redis/WebSocket 기반 실시간 채팅·투표 운영 관리 시스템**
+Redis와 WebSocket을 활용한 실시간 익명 채팅·투표 운영 관리 시스템입니다.
 
-LiveOpsBoard는 WebSocket과 Redis를 활용해 실시간 메시지 브로드캐스팅, 투표 랭킹, Rate Limiting, 관리자 운영 제어 기능을 구현한 Spring Boot 기반 실시간 운영 관리 시스템입니다.
-
-단순 채팅 서비스 구현을 넘어, 실시간 사용자 입력이 많은 환경에서 메시지 수명 관리, 반복 요청 제한, 순위 집계, 운영 시간 제어, 금칙어 정책 관리 기능을 관리자 대시보드와 함께 제공하는 것을 목표로 했습니다.
+단순 채팅/투표 기능보다, 익명 사용자가 빠르게 입력하는 환경에서 발생하는 운영 문제를 다루는 데 초점을 맞췄습니다. 메시지 수명 관리, 반복 요청 제한, 중복 투표 방지, 채팅방 정원 제어, 금칙어 정책, 관리자 대시보드, 보안 이벤트 로그를 하나의 서비스 흐름으로 구현했습니다.
 
 > 기존 프로젝트명: BubbleTalk
 
----
+## 핵심 요약
 
-## 1. 프로젝트 개요
+| 구분 | 내용 |
+| --- | --- |
+| 주제 | 실시간 익명 채팅과 점심 메뉴 투표를 운영자가 제어하는 서비스 |
+| 백엔드 | Java 17, Spring Boot 3.3, Spring Security, JPA, QueryDSL |
+| 실시간 처리 | WebSocket, STOMP |
+| 저장소 | MySQL, Redis |
+| Redis 활용 | TTL, Set, Sorted Set, Lua Script, Rate Limiting |
+| 화면 | Thymeleaf, Vanilla JS |
+| 인프라 | Docker, Docker Compose |
+| 테스트 | JUnit 5, Mockito |
 
-LiveOpsBoard는 로그인 없이 참여하는 익명 채팅과 실시간 투표를 중심으로, 사용자 입력이 빠르게 발생하는 환경에서 운영자가 시스템 상태와 정책을 제어할 수 있도록 구성한 실시간 운영 관리 시스템입니다.
+## 구현 범위
 
-채팅 메시지는 WebSocket/STOMP를 통해 실시간으로 전달되며, Redis TTL을 활용해 일정 시간 후 자동 만료됩니다. 투표 데이터는 Redis Sorted Set을 기반으로 집계하고, 랭킹 변화는 WebSocket을 통해 사용자 화면에 즉시 반영됩니다.
+### 사용자 기능
 
-서버 발급 GuestID로 익명 사용자를 식별하고, Redis 원자 연산을 이용해 중복 투표와 채팅방 동시 입장을 제어합니다. MySQL에는 채팅방의 영구 메타데이터만 저장하고 실제 접속 세션과 현재 인원은 Redis에서 관리합니다.
+- 익명 사용자의 실시간 채팅 메시지 송수신
+- Redis TTL 기반 휘발성 채팅 메시지 관리
+- 점심 메뉴 등록과 실시간 투표
+- Redis Sorted Set 기반 실시간 랭킹 조회
+- 공개방·비밀방 생성, 입장, 퇴장
+- 방별 최대 인원 제한
+- 서버 발급 GuestID 기반 익명 사용자 식별
 
----
+### 운영자 기능
 
-## 2. 핵심 구현 목표
+- 관리자 대시보드
+- 전체 WebSocket session 수 조회
+- 채팅방 목록, 공개/비공개/종료 상태 조회
+- 실시간 채팅 모니터링
+- 채팅방 강제 종료
+- 투표 이벤트 시작/종료 및 운영 시간 변경
+- 금칙어 추가/삭제와 Redis 캐시 갱신
+- 시스템 공지 발송
+- 보안 이벤트 로그 조회
+- stale WebSocket session 수동 정리
 
-- WebSocket/STOMP 기반 실시간 메시지 브로드캐스팅 구현
-- Redis TTL을 활용한 휘발성 메시지 상태 관리
-- Redis Sorted Set 기반 실시간 투표 랭킹 처리
-- Redis 기반 Rate Limiting을 통한 반복 요청 제한
-- 서버 발급 GuestID 기반 비회원 식별과 `guestId → clientId → IP` fallback
-- Redis `SADD` 기반 중복 투표 원자 처리
-- 공개방·비밀방과 최대 인원을 지원하는 채팅방 도메인
-- Redis Set/Lua 기반 WebSocket 세션 및 방 정원 관리
-- Redis Pub/Sub을 활용한 실시간 이벤트 전파 구조 구현
-- 관리자 대시보드를 통한 운영 시간, 공지, 금칙어, 데이터 초기화 제어
-- Docker Compose 기반 MySQL/Redis 실행 환경 구성
+## 주요 엔티티
 
----
+| 엔티티 | 테이블 | 역할 |
+| --- | --- | --- |
+| `ChatRoom` | `chat_room` | 공개방/비밀방의 메타데이터, 최대 인원, 방 상태, 종료 시각 관리 |
+| `SecurityEventLog` | `security_event_log` | 방 생성/입장/퇴장, 메시지 전송, 관리자 조작, stale session 정리 등 사용자·운영 이벤트 기록 |
+| `ForbiddenWord` | `forbidden_words` | 관리자 금칙어 정책 저장, Redis 캐시와 연동해 채팅 필터링에 사용 |
+| `DailyMenu` | `daily_menus` | 투표 대상 메뉴 마스터 데이터 |
+| `LunchHistory` | `TB_LUNCH_HISTORY` | Redis 실시간 투표 결과를 정산한 일별 최종 랭킹 이력 |
 
-## 3. 주요 기능
+실시간 상태는 DB 엔티티로 모두 저장하지 않고 Redis에 분리했습니다. 예를 들어 채팅방의 현재 인원, 활성 WebSocket session, 중복 투표 여부, 휘발성 메시지는 Redis Set/ZSet/TTL을 사용하고, MySQL에는 장기 보관이 필요한 메타데이터와 운영 로그만 저장합니다.
 
-### 1. 실시간 메시지 브로드캐스팅
+## 주요 기술 의사결정
 
-사용자가 전송한 메시지를 WebSocket/STOMP 기반으로 전체 사용자에게 실시간 전달합니다.  
-메시지는 Redis TTL을 활용해 일정 시간 동안만 유지되도록 설계하여, 화면에 잠시 표시된 후 사라지는 휘발성 메시지 흐름을 구현했습니다.
+### 1. 채팅 메시지는 Redis TTL로 관리
 
-### 2. Redis 기반 Rate Limiting
+채팅 메시지를 영구 저장하지 않고 Redis에 10초 TTL로 저장했습니다. 익명 실시간 채팅의 특성상 모든 메시지를 DB에 남기는 것보다, 새로 접속한 사용자가 최근 메시지만 자연스럽게 확인하고 이후 자동으로 사라지는 흐름이 더 적합하다고 판단했습니다.
 
-동일 사용자의 반복 요청을 제한하기 위해 Redis 기반 Rate Limiting을 적용했습니다.  
-짧은 시간 동안 과도한 메시지 전송이 발생할 경우 요청을 제한하여 서비스 안정성과 운영 정책을 유지할 수 있도록 했습니다.
+관련 코드:
 
-### 3. 실시간 투표 랭킹
+- `src/main/java/com/bubbletalk/chat/service/ChatService.java`
 
-투표 데이터는 Redis Sorted Set을 활용해 관리했습니다.  
-득표수 변경 시 실시간으로 순위를 계산하고, WebSocket을 통해 사용자 화면에 랭킹 변화를 즉시 반영합니다.
+### 2. 투표 랭킹은 Redis Sorted Set으로 처리
 
-### 4. 관리자 운영 대시보드
+투표 점수는 Redis ZSet에 저장하고, 메뉴 ID를 member, 득표수를 score로 관리했습니다. 매 투표마다 DB 집계를 수행하지 않고 Redis에서 즉시 순위를 계산해 실시간 화면에 반영할 수 있도록 설계했습니다.
 
-관리자는 대시보드를 통해 활성 WebSocket session 수, 오늘의 전체 메뉴·투표 수, 채팅방 운영 현황과 실시간 채팅을 확인할 수 있습니다.
+관련 코드:
 
-관리자 Summary API는 전체·공개·비밀 방 수와 OPEN·FULL·CLOSED 상태별 방 수를 제공하며, 관리자 채팅방 목록에서는 비밀방과 CLOSED 방을 포함한 전체 방의 현재 인원/최대 인원을 확인할 수 있습니다. 방별 현재 인원은 Redis `room:{roomCode}:sessions` Set 크기를 기준으로 계산합니다.
+- `src/main/java/com/bubbletalk/menu/service/MenuService.java`
 
-오늘의 메뉴 수는 당일 랭킹 ZSet의 `ZCARD`, 오늘의 투표 수는 ZSet 전체 score 합산으로 계산하여 기존 상위 10개 랭킹 기반의 부정확한 집계를 제거했습니다.
+### 3. 중복 투표는 Redis Set으로 방지
 
-관리자 화면은 하나의 WebSocket 연결에서 `/topic/user-count`와 `/topic/bubbles`를 함께 구독합니다. 채팅 모니터는 `content` 필드를 사용하고 GuestID, clientId, IP, roomCode를 표시합니다.
+`SADD`의 반환값을 이용해 최초 투표인 경우에만 점수를 증가시켰습니다. 중복 확인과 점수 증가 사이에서 발생할 수 있는 중복 반영 문제를 줄이기 위한 구조입니다.
 
-또한 투표 이벤트 시작/종료, 운영 시간 변경, 시스템 공지 발송, 금칙어 관리, 데이터 초기화 기능을 수행할 수 있습니다.
+### 4. 채팅방 정원은 Redis Lua Script로 원자 처리
 
-### 5. 금칙어 정책 관리
+방 입장 시 현재 인원 확인(`SCARD`)과 session 추가(`SADD`)를 분리하면 동시 입장 상황에서 최대 인원을 초과할 수 있습니다. 이를 막기 위해 Lua Script로 두 작업을 하나의 원자적 흐름으로 처리했습니다.
 
-관리자 화면에서 금칙어를 추가하거나 삭제할 수 있으며, 변경된 정책은 실시간 채팅 필터링에 반영됩니다.  
-이를 통해 운영자가 서비스 상황에 맞게 콘텐츠 정책을 조정할 수 있도록 구현했습니다.
+관련 코드:
 
-### 6. 비회원 채팅방
+- `src/main/java/com/bubbletalk/chatroom/service/ChatRoomService.java`
 
-공개방은 목록에서 조회할 수 있고, 비밀방은 roomCode 또는 초대 링크를 아는 사용자만 입장할 수 있습니다.
+### 5. 익명 사용자 식별은 GuestID 우선
 
-방 정보는 MySQL `chat_room`에 저장하며, 방별 현재 인원은 Redis의 WebSocket session Set을 기준으로 계산합니다. 최대 인원 확인과 session 등록은 Lua script로 원자 처리하여 동시 입장 시 정원을 초과하지 않도록 했습니다.
+익명 서비스에서도 도배, 중복 투표, 보안 이벤트 로그를 처리하려면 최소한의 식별자가 필요합니다. 서버 발급 GuestID를 우선 사용하고, 없을 경우 clientId, IP 순서로 fallback합니다.
 
----
-
-## 4. 아키텍처
+## 아키텍처
 
 ```text
 [Client]
    |
-   | WebSocket / HTTP
+   | HTTP / WebSocket(STOMP)
    v
-[Spring Boot Application]
+[Spring Boot]
    |
-   |-- WebSocket/STOMP: 실시간 채팅 및 투표 이벤트 브로드캐스팅
-   |-- Admin Controller: 운영 시간, 공지, 금칙어, 데이터 초기화 제어
-   |-- Chat Service: 메시지 처리 및 Rate Limiting
-   |-- Vote Service: 투표 처리 및 랭킹 계산
+   |-- ChatService
+   |     |-- 메시지 검증
+   |     |-- 금칙어 필터링
+   |     |-- Redis TTL 저장
+   |     |-- Redis Rate Limiting
    |
-   |-- Redis
-   |    |-- TTL: 휘발성 메시지 관리
-   |    |-- ZSET: 실시간 랭킹 관리
-   |    |-- Pub/Sub: 이벤트 전파
-   |    |-- Rate Limit: 반복 요청 제한
+   |-- MenuService
+   |     |-- 메뉴 등록
+   |     |-- Redis ZSet 랭킹
+   |     |-- Redis Set 중복 투표 방지
+   |
+   |-- ChatRoomService
+   |     |-- 공개방/비밀방 관리
+   |     |-- Redis Set 기반 현재 인원 계산
+   |     |-- Lua Script 기반 정원 제어
+   |
+   |-- AdminDashboardService
+   |     |-- 운영 현황 조회
+   |     |-- 방 종료
+   |     |-- 관리자 이벤트 처리
    |
    |-- MySQL
-        |-- 투표 결과 히스토리
-        |-- 메뉴 데이터
-        |-- 금칙어 정책
-        |-- 운영 설정
+   |     |-- 채팅방 메타데이터
+   |     |-- 메뉴 마스터
+   |     |-- 투표 결과 히스토리
+   |     |-- 금칙어
+   |     |-- 보안 이벤트 로그
+   |
+   |-- Redis
+         |-- 휘발성 메시지
+         |-- 실시간 랭킹
+         |-- 중복 투표 Set
+         |-- WebSocket session Set
+         |-- Rate Limit key
 ```
 
-### 패키지 구조
+## Redis 키 설계
+
+| 목적 | 자료구조 | 예시 키 |
+| --- | --- | --- |
+| 휘발성 채팅 메시지 | String + TTL | `chat:bubble:{uuid}` |
+| 채팅 Rate Limit | String + TTL | `chat:ratelimit:{type}:{actorId}` |
+| 실시간 투표 랭킹 | Sorted Set | `lunch:ranking:{yyyyMMdd}` |
+| 중복 투표 방지 | Set | `lunch:voters:{yyyyMMdd}:{menuId}` |
+| 전체 활성 세션 | Set | `chat:active:sessions` |
+| 방별 활성 세션 | Set | `room:{roomCode}:sessions` |
+| 방별 익명 사용자 | Set | `room:{roomCode}:guests` |
+| session과 사용자 매핑 | Hash | `room:{roomCode}:session-actors` |
+| session이 입장한 방 목록 | Set | `room:session:rooms:{sessionId}` |
+| 금칙어 캐시 | Set | `chat:forbidden` |
+
+상세 DB/Redis 설계는 [DOCS_DB_DESIGN.md](./DOCS_DB_DESIGN.md)에 정리했습니다.
+
+## 패키지 구조
 
 ```text
-com.bubbletalk/
-├── admin.dashboard/       # 관리자 대시보드
-├── base/                  # 공통 기반 클래스
-├── chat/                  # 실시간 채팅 도메인
-├── chatroom/              # 공개방·비밀방 및 방 상태 관리
-├── config/                # WebSocket, Redis, Security 설정
-├── guest/                 # 서버 발급 GuestID 지원
-├── global/                # 공통 상수, 예외 처리, 유틸리티
-├── main/                  # 메인 화면 컨트롤러
-├── menu/                  # 메뉴 및 투표 도메인
-└── security/              # 금칙어 관리 및 보안 관련 로직
+com.bubbletalk
+├── admin.dashboard   # 관리자 대시보드
+├── chat              # 실시간 채팅
+├── chatroom          # 채팅방 생성/입장/퇴장/종료
+├── config            # WebSocket, Redis, Security 설정
+├── guest             # GuestID 발급/관리
+├── menu              # 메뉴 등록, 투표, 랭킹
+├── security          # 금칙어 정책
+├── securitylog       # 사용자 행위 로그
+└── global            # 공통 예외, 상수
 ```
 
----
-
-## 5. 기술 스택
-
-- **Backend**: Java 17, Spring Boot 3.3.0
-- **Persistence**: Spring Data JPA, QueryDSL, Spring Data Redis
-- **Real-time**: WebSocket, STOMP, Redis Pub/Sub
-- **Frontend**: Thymeleaf, Vanilla JS, Tailwind CSS, FontAwesome
-- **Documentation**: Springdoc OpenAPI, Swagger UI
-- **Infrastructure**: Docker, Docker Compose, MySQL 8.0, Redis 7.0
-
----
-
-## 6. Redis 활용 포인트
-
-| 활용 영역 | Redis 자료구조/기능 | 적용 이유 |
-|---|---|---|
-| 휘발성 메시지 | TTL | 메시지를 일정 시간 후 자동 만료 처리하기 위해 사용 |
-| 반복 요청 제한 | String / TTL | 동일 사용자의 짧은 시간 내 연속 메시지 전송을 제한하기 위해 사용 |
-| 중복 투표 방지 | Set | 사용자별 투표 여부를 빠르게 확인하고 중복 투표를 차단하기 위해 사용 |
-| 전체 접속자 관리 | Set | 활성 WebSocket session ID를 중복 없이 관리하기 위해 사용 |
-| 방별 현재 인원 | Set | roomCode별 활성 session 수를 현재 인원으로 계산하기 위해 사용 |
-| 방 정원 원자 처리 | Lua / Set | `SCARD`와 `SADD` 사이의 경쟁 조건을 제거하기 위해 사용 |
-| 실시간 랭킹 | Sorted Set | 투표 점수 기반 순위 계산을 빠르게 처리하기 위해 사용 |
-| 실시간 이벤트 전파 | Pub/Sub | 채팅, 투표, 공지 이벤트를 실시간으로 브로드캐스팅하기 위해 사용 |
-| 금칙어 캐싱 | Set / Cache Aside | DB 조회 없이 빠르게 필터링 정책을 적용하고, 관리자 변경 사항을 캐시에 반영하기 위해 사용 |
-| 운영 상태 관리 | String | 투표 이벤트의 OPEN/CLOSED 상태를 관리하기 위해 사용 |
-
----
-
-## 7. 관리자 대시보드
-
-관리자 대시보드는 운영자가 서비스 상태를 확인하고 운영 정책을 제어할 수 있는 화면입니다.
-
-- 활성 WebSocket session 수, 오늘의 전체 메뉴 수, 오늘의 전체 투표 수 확인
-- 전체·공개·비밀 채팅방과 OPEN·FULL·CLOSED 상태 확인
-- 방별 현재 인원/최대 인원 및 Redis 상태 확인
-- 실시간 채팅 모니터링
-- 투표 이벤트 시작/종료 및 운영 시간 변경
-- 시스템 공지 발송
-- 금칙어 추가/삭제 및 Redis 캐시 갱신
-- 당일 랭킹 및 투표 이력 초기화
-- 과거 우승 메뉴 이력 조회
-- OPEN/FULL 채팅방 수동 종료
-- Redis stale WebSocket session 수동 정리
-
-관리자 API는 기존과 동일하게 `ROLE_ADMIN`으로 보호됩니다. `activeGuests`는 전역 GuestID Set이 없어 정확하게 계산할 수 없으므로 Summary 응답에서 `null`로 처리합니다.
-
-운영 안정화를 위해 관리자는 OPEN/FULL 방을 종료할 수 있습니다. 방 종료 시 MySQL 상태를 `CLOSED`로 변경하고 `closedAt`을 기록한 뒤 해당 방의 Redis session·guest·session-actor 키를 정리합니다. session의 역방향 방 목록에서는 종료한 roomCode만 제거하여 다른 방 정보는 유지합니다.
-
-수동 Stale Session 정리 기능은 현재 서버 메모리의 활성 WebSocket session registry와 Redis의 전역·방별 session Set을 비교해, 현재 서버에서 활성 상태가 아닌 session만 정리합니다. 이 방식은 현재 단일 애플리케이션 인스턴스 구조를 기준으로 합니다.
-
----
-
-## 8. 트러블슈팅
-
-개발 과정에서 발생한 기술적 이슈와 해결 과정은 [TROUBLESHOOTING.md](./TROUBLESHOOTING.md)에 상세히 기록했습니다.  
-아래는 README에서 바로 확인할 수 있도록 정리한 대표 사례입니다.
+## 트러블슈팅 사례
 
 | 문제 | 원인 | 해결 |
-|---|---|---|
-| 실시간 랭킹 동기화 지연 | 메뉴 추가 또는 투표 후 DB/Redis 상태가 화면에 즉시 반영되지 않아 새로고침이 필요한 문제 발생 | REST API로 투표 트랜잭션을 처리한 뒤 WebSocket/STOMP로 최신 랭킹을 브로드캐스팅하도록 개선 |
-| 반복 메시지 전송 문제 | 익명 채팅 특성상 동일 사용자의 짧은 시간 내 연속 요청을 제한하는 정책 필요 | WebSocket Handshake 단계에서 IP를 추출하고 Redis INCR/EXPIRE 기반 Rate Limiting을 적용 |
-| 금칙어 정책 반영 지연 | 금칙어를 DB에 추가해도 Redis 캐시가 갱신되지 않으면 필터링에 반영되지 않는 Cache Aside 정합성 문제 발생 | 관리자 캐시 갱신 API와 캐시 미스 시 DB 재로딩 로직을 추가하여 필터링 정책 반영 경로 보완 |
-| 동시 투표 중복 반영 | 중복 확인과 점수 증가가 분리되어 동시 요청이 모두 최초 투표로 판단될 수 있음 | Redis `SADD` 결과가 최초 추가일 때만 ZSet 점수를 증가하도록 원자성 개선 |
-| 채팅방 정원 초과 | 현재 인원 확인과 session 추가가 분리되면 동시 입장에서 최대 인원을 초과할 수 있음 | Redis Lua script로 `SCARD`와 `SADD`를 하나의 원자적 흐름으로 처리 |
-| 메뉴·투표 API 302 리다이렉트 | `permitAll`과 별개로 CSRF 토큰 없는 POST 요청이 차단됨 | CSRF 전체 비활성화 없이 익명 메뉴 추가·투표 경로만 최소 예외 처리 |
-| 관리자 메뉴·투표 통계 부정확 | 사용자용 상위 10개 랭킹 응답을 관리자 전체 통계로 재사용 | 당일 ZSet `ZCARD`와 전체 score 합산으로 정확한 전체 통계 계산 |
-| 관리자 WebSocket 접속자 수 왜곡 | 통계와 채팅 모니터가 각각 SockJS 연결을 생성 | 관리자 페이지당 하나의 STOMP 연결에서 접속자 수와 전역 채팅을 함께 구독 |
-| 관리자 채팅 모니터 미작동 | 존재하지 않는 `/topic/chat` 구독과 `msg.message` 필드 사용 | 실제 `/topic/bubbles`와 `msg.content`를 사용하고 익명 식별자·roomCode 표시 |
+| --- | --- | --- |
+| 실시간 랭킹 반영 지연 | REST 처리 후 화면 갱신 이벤트가 없음 | 투표 성공 후 WebSocket으로 최신 랭킹 브로드캐스팅 |
+| 중복 투표 가능성 | 중복 확인과 점수 증가가 분리됨 | Redis `SADD` 결과가 최초 추가일 때만 ZSet score 증가 |
+| 채팅 도배 | 익명 사용자가 짧은 시간에 반복 전송 | Redis `INCR`/`EXPIRE` 기반 Rate Limiting 적용 |
+| 방 정원 초과 | 현재 인원 확인과 session 추가 사이 경쟁 조건 | Redis Lua Script로 `SCARD`와 `SADD` 원자 처리 |
+| 금칙어 반영 지연 | DB 변경 후 Redis 캐시 미갱신 | 관리자 캐시 갱신 API와 cache-aside 로직 추가 |
+| stale session 잔존 | 비정상 종료 시 Redis session Set에 값이 남음 | WebSocket disconnect 처리와 관리자 수동 cleanup 기능 추가 |
 
----
+상세한 문제 해결 과정은 [TROUBLESHOOTING.md](./TROUBLESHOOTING.md)에 기록했습니다.
 
-## 9. 실행 방법
+## 실행 방법
 
-### 1. 인프라 실행
-
-프로젝트 루트에서 MySQL과 Redis를 실행합니다.
+### 1. MySQL, Redis 실행
 
 ```bash
 docker-compose up -d
@@ -206,30 +190,66 @@ docker-compose up -d
 
 ### 2. 애플리케이션 실행
 
+Windows:
+
+```bash
+gradlew.bat bootRun
+```
+
+macOS/Linux:
+
 ```bash
 ./gradlew bootRun
 ```
 
-- **메인 화면**: `http://localhost:8080`
-- **관리자 화면**: `http://localhost:8080/admin/dashboard`
-- **Swagger UI**: `http://localhost:8080/swagger-ui.html`
+### 3. 접속 경로
 
----
+| 화면 | URL |
+| --- | --- |
+| 메인 화면 | `http://localhost:8080` |
+| 관리자 대시보드 | `http://localhost:8080/admin/dashboard` |
+| Swagger UI | `http://localhost:8080/swagger-ui.html` |
 
-## 10. 향후 개선 사항
+기본 관리자 계정은 로컬 개발용입니다.
 
-- 관리자 인증/인가 정책 고도화
-- 실시간 지표 수집 및 대시보드 시각화 강화
-- 투표 결과 정산 및 히스토리 조회 기능 확장
-- Redis 장애 상황을 고려한 복구 전략 보완
-- 부하 테스트를 통한 Rate Limiting 임계값 검증
-- 실제 브라우저 다중 탭 환경의 WebSocket reconnect 및 stale session 정리 검증
-- 전역 GuestID Set 기반 활성 Guest 집계
-- 운영 이벤트 로그와 관리자 감사 로그
-- 방별 topic 채팅 모니터링
-- 다중 애플리케이션 인스턴스를 위한 공유 WebSocket session registry
+```text
+username: admin
+password: admin1234
+```
 
----
+운영 환경에서는 `ADMIN_USERNAME`, `ADMIN_PASSWORD` 환경변수로 반드시 변경해야 합니다.
+
+## 테스트
+
+```bash
+gradlew.bat test
+```
+
+현재 테스트는 서비스 계층의 핵심 정책을 중심으로 작성했습니다.
+
+- 채팅 메시지 검증
+- 금칙어 필터링
+- 채팅 Rate Limiting
+- 공개방/비밀방 생성
+- 방 정원 초과 검증
+- Redis Lua 기반 session 등록
+- 방 종료와 Redis key 정리
+- WebSocket disconnect 시 session 정리
+- 관리자 대시보드 summary 계산
+
+## 현재 한계와 개선 계획
+
+이 프로젝트는 학습 및 포트폴리오 목적의 단일 애플리케이션 인스턴스 구조를 기준으로 구현했습니다. 운영 수준으로 확장하려면 아래 항목을 보완해야 합니다.
+
+- 다중 서버 환경을 위한 공유 WebSocket session registry 설계
+- Redis 장애 시 복구 전략과 degraded mode 정의
+- Testcontainers 기반 MySQL/Redis 통합 테스트 추가
+- HTTP 에러 응답 규약 개선
+- 운영 환경에서 `ddl-auto: update` 제거 및 Flyway/Liquibase 도입
+- 관리자 계정 정책 강화
+- Swagger 공개 범위 제한
+- Redis `KEYS` 사용 지점의 `SCAN` 전환
+- 부하 테스트를 통한 Rate Limit 임계값 검증
 
 ## 라이선스
 
