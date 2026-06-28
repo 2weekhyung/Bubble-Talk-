@@ -23,4 +23,9 @@ public class MainController {
         model.addAttribute("guestId", guestId);
         return "main";
     }
+
+    @GetMapping("/login")
+    public String loginPage() {
+        return "login";
+    }
 }

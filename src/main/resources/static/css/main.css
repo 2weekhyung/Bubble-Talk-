@@ -117,6 +117,205 @@ input {
     font-weight: 800;
 }
 
+.login-shell {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    place-items: center;
+    padding: clamp(22px, 4vw, 46px);
+    background:
+            linear-gradient(135deg, rgba(255, 246, 238, 0.86), rgba(223, 247, 243, 0.72)),
+            var(--bg);
+}
+
+.login-panel {
+    width: min(980px, 100%);
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(320px, .9fr);
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.92);
+    box-shadow: var(--shadow);
+}
+
+.login-copy {
+    min-width: 0;
+    padding: clamp(28px, 5vw, 56px);
+    background: #fffaf4;
+}
+
+.login-kicker {
+    display: inline-flex;
+    align-items: center;
+    height: 28px;
+    padding: 0 10px;
+    border-radius: 999px;
+    background: var(--mint-soft);
+    color: #14665d;
+    font-size: .72rem;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.login-copy h1 {
+    margin: 18px 0 12px;
+    color: var(--text);
+    font-size: clamp(2rem, 5vw, 3.7rem);
+    font-weight: 900;
+    line-height: .98;
+}
+
+.login-copy p {
+    max-width: 420px;
+    margin: 0;
+    color: var(--muted);
+    font-size: .98rem;
+    font-weight: 700;
+    line-height: 1.65;
+}
+
+.login-signal-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 34px;
+}
+
+.login-signal-grid div {
+    min-width: 0;
+    display: grid;
+    gap: 8px;
+    padding: 14px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: #ffffff;
+}
+
+.login-signal-grid i {
+    color: var(--primary);
+}
+
+.login-signal-grid span {
+    overflow-wrap: anywhere;
+    color: #3c4a47;
+    font-size: .74rem;
+    font-weight: 900;
+}
+
+.login-form {
+    min-width: 0;
+    display: grid;
+    align-content: center;
+    gap: 16px;
+    padding: clamp(24px, 4vw, 42px);
+}
+
+.login-form-head {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr);
+    gap: 12px;
+    align-items: center;
+    margin-bottom: 4px;
+}
+
+.login-lock {
+    width: 44px;
+    height: 44px;
+    display: grid;
+    place-items: center;
+    border-radius: 14px;
+    background: var(--primary);
+    color: #ffffff;
+}
+
+.login-form-head strong,
+.login-form-head span {
+    display: block;
+}
+
+.login-form-head strong {
+    font-size: 1rem;
+    font-weight: 900;
+}
+
+.login-form-head span {
+    margin-top: 4px;
+    color: var(--muted);
+    font-size: .75rem;
+    font-weight: 800;
+}
+
+.login-alert {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 11px 12px;
+    border-radius: 11px;
+    font-size: .78rem;
+    font-weight: 900;
+}
+
+.login-alert.error {
+    background: #fff0ed;
+    color: #b2382b;
+}
+
+.login-alert.success {
+    background: var(--mint-soft);
+    color: #14665d;
+}
+
+.login-field {
+    display: grid;
+    gap: 7px;
+}
+
+.login-field span {
+    color: #3c4a47;
+    font-size: .75rem;
+    font-weight: 900;
+}
+
+.login-field input {
+    width: 100%;
+    height: 46px;
+    padding: 0 14px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: #fbfcf9;
+    color: var(--text);
+    font-size: .92rem;
+    font-weight: 800;
+    outline: none;
+    transition: border-color .16s ease, box-shadow .16s ease, background .16s ease;
+}
+
+.login-field input:focus {
+    border-color: var(--mint);
+    background: #ffffff;
+    box-shadow: 0 0 0 4px rgba(46, 196, 182, .14);
+}
+
+.login-submit {
+    height: 48px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 4px;
+    border-radius: 12px;
+    background: var(--primary);
+    color: #ffffff;
+    font-size: .92rem;
+    font-weight: 900;
+    box-shadow: 0 14px 26px rgba(255, 107, 87, .22);
+}
+
+.login-submit:hover {
+    background: var(--primary-dark);
+}
+
 .bubble-stage {
     position: relative;
     height: clamp(190px, 26vh, 260px);
@@ -1843,6 +2042,19 @@ body:has(.admin-shell) .app-footer {
         width: 100%;
         flex-wrap: wrap;
     }
+
+    .login-panel {
+        grid-template-columns: 1fr;
+    }
+
+    .login-copy {
+        padding-bottom: 24px;
+    }
+
+    .login-signal-grid {
+        grid-template-columns: 1fr;
+        margin-top: 22px;
+    }
 }
 
 @media (max-width: 520px) {
@@ -1882,5 +2094,19 @@ body:has(.admin-shell) .app-footer {
 
     #btn-copy-room-code {
         min-height: 40px;
+    }
+
+    .login-shell {
+        place-items: stretch;
+        padding: 14px;
+        overflow-y: auto;
+    }
+
+    .login-panel {
+        border-radius: 14px;
+    }
+
+    .login-copy h1 {
+        font-size: 2rem;
     }
 }

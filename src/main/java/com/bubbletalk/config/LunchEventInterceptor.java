@@ -1,5 +1,6 @@
 package com.bubbletalk.config;
 
+import com.bubbletalk.base.dto.BaseResDto;
 import com.bubbletalk.global.constant.RedisKey;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
@@ -9,9 +10,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
-
-import java.util.HashMap;
-import java.util.Map;
 
 /**
  * [점심 타임어택 잠금 인터셉터]
@@ -43,9 +41,10 @@ public class LunchEventInterceptor implements HandlerInterceptor {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             response.setContentType("application/json;charset=UTF-8");
 
-            Map<String, String> errorResponse = new HashMap<>();
-            errorResponse.put("code", "4030");
-            errorResponse.put("message", String.format("🔒 지금은 휴전 중입니다. (전쟁 시간: %s ~ %s)", startTime, endTime));
+            BaseResDto errorResponse = new BaseResDto(
+                    "4030",
+                    String.format("지금은 휴전 중입니다. (전쟁 시간: %s ~ %s)", startTime, endTime)
+            );
 
             response.getWriter().write(objectMapper.writeValueAsString(errorResponse));
             return false;

@@ -41,6 +41,7 @@ public class SecurityConfig {
                         .anyRequest().authenticated()
                 )
                 .formLogin(form -> form
+                        .loginPage("/login")
                         .defaultSuccessUrl("/admin/dashboard", true)
                         .permitAll()
                 )

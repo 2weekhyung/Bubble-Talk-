@@ -39,7 +39,11 @@ const COMMON_AJAX = {
             // 응답이 성공적이지 않을 경우 에러 처리
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({}));
-                throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+                const error = new Error(errorData.message || `HTTP error! status: ${response.status}`);
+                error.code = errorData.code || String(response.status);
+                error.status = response.status;
+                error.result = errorData.result;
+                throw error;
             }
 
             // 본문이 없는 경우(204 No Content 등) 처리

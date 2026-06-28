@@ -87,27 +87,19 @@ public class MenuRestController {
                                               @RequestHeader(value = "X-Client-Id", required = false) String clientId,
                                               HttpServletRequest request) {
         String requesterId = resolveVoterId(clientId, request);
-        try {
-            // 1. 메뉴 저장 및 투표 통합 처리
-            menuService.saveMenu(reqDto.getMenuName(), requesterId);
-            securityEventLogService.logEvent(
-                    EventType.VOTE_CREATED,
-                    Severity.INFO,
-                    null,
-                    resolveGuestId(request),
-                    request,
-                    "투표 생성"
-            );
-            
-            // 2. 실시간 전파 (목록만 갱신)
-            socketController.broadcastMenuUpdate();
-            
-            return ResponseEntity.ok(BaseResDto.ok());
-        } catch (com.bubbletalk.global.exception.BusinessException e) {
-            return ResponseEntity.badRequest().body(new BaseResDto("4002", e.getMessage()));
-        } catch (Exception e) {
-            return ResponseEntity.internalServerError().body(new BaseResDto("5000", "처리 중 오류가 발생했습니다."));
-        }
+        menuService.saveMenu(reqDto.getMenuName(), requesterId);
+        securityEventLogService.logEvent(
+                EventType.VOTE_CREATED,
+                Severity.INFO,
+                null,
+                resolveGuestId(request),
+                request,
+                "투표 생성"
+        );
+
+        socketController.broadcastMenuUpdate();
+
+        return ResponseEntity.ok(BaseResDto.ok());
     }
 
     /**
@@ -155,23 +147,17 @@ public class MenuRestController {
                                            @RequestHeader(value = "X-Client-Id", required = false) String clientId,
                                            HttpServletRequest request) {
         String voterId = resolveVoterId(clientId, request);
-        try {
-            menuService.increaseVote(reqDto.getMenuId(), voterId);
-            securityEventLogService.logEvent(
-                    EventType.VOTE_SUBMIT,
-                    Severity.INFO,
-                    null,
-                    resolveGuestId(request),
-                    request,
-                    "사용자 투표 참여"
-            );
-            socketController.broadcastMenuUpdate();
-            return ResponseEntity.ok(BaseResDto.ok());
-        } catch (com.bubbletalk.global.exception.BusinessException e) {
-            return ResponseEntity.badRequest().body(new BaseResDto("4002", e.getMessage()));
-        } catch (Exception e) {
-            return ResponseEntity.internalServerError().body(new BaseResDto("5000", "처리 중 오류가 발생했습니다."));
-        }
+        menuService.increaseVote(reqDto.getMenuId(), voterId);
+        securityEventLogService.logEvent(
+                EventType.VOTE_SUBMIT,
+                Severity.INFO,
+                null,
+                resolveGuestId(request),
+                request,
+                "사용자 투표 참여"
+        );
+        socketController.broadcastMenuUpdate();
+        return ResponseEntity.ok(BaseResDto.ok());
     }
 
     private String resolveVoterId(String clientId, HttpServletRequest request) {

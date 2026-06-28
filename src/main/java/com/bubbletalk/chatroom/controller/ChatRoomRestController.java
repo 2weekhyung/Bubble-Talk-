@@ -6,7 +6,6 @@ import com.bubbletalk.chatroom.dto.ChatRoomJoinReqDto;
 import com.bubbletalk.chatroom.dto.ChatRoomResDto;
 import com.bubbletalk.chatroom.service.ChatRoomService;
 import com.bubbletalk.guest.GuestIdSupport;
-import com.bubbletalk.global.exception.BusinessException;
 import com.bubbletalk.securitylog.entity.EventType;
 import com.bubbletalk.securitylog.entity.Severity;
 import com.bubbletalk.securitylog.service.SecurityEventLogService;
@@ -37,20 +36,16 @@ public class ChatRoomRestController {
     public ResponseEntity<BaseResDto> createRoom(@RequestBody ChatRoomCreateReqDto reqDto,
                                                  @RequestHeader(value = "X-Client-Id", required = false) String clientId,
                                                  HttpServletRequest request) {
-        try {
-            ChatRoomResDto room = chatRoomService.createRoom(reqDto, resolveRequesterId(clientId, request));
-            securityEventLogService.logEvent(
-                    EventType.ROOM_CREATED,
-                    Severity.INFO,
-                    room.getRoomCode(),
-                    resolveGuestId(request),
-                    request,
-                    "채팅방 생성"
-            );
-            return ResponseEntity.ok(BaseResDto.ok(room));
-        } catch (BusinessException e) {
-            return ResponseEntity.badRequest().body(new BaseResDto(e.getCode(), e.getMessage()));
-        }
+        ChatRoomResDto room = chatRoomService.createRoom(reqDto, resolveRequesterId(clientId, request));
+        securityEventLogService.logEvent(
+                EventType.ROOM_CREATED,
+                Severity.INFO,
+                room.getRoomCode(),
+                resolveGuestId(request),
+                request,
+                "채팅방 생성"
+        );
+        return ResponseEntity.ok(BaseResDto.ok(room));
     }
 
     @GetMapping

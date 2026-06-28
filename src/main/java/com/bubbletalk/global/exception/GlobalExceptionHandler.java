@@ -19,9 +19,9 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<BaseResDto> handleBusinessException(BusinessException e) {
-        log.error("Business Exception: {}", e.getMessage());
+        log.warn("Business Exception: code={}, message={}", e.getCode(), e.getMessage());
         return ResponseEntity
-                .status(HttpStatus.OK)
+                .status(HttpStatus.BAD_REQUEST)
                 .body(new BaseResDto(e.getCode(), e.getMessage()));
     }
 
@@ -33,8 +33,7 @@ public class GlobalExceptionHandler {
         log.error("Unhandled Exception: ", e);
 
         // 요청이 JSON(API)인 경우 JSON 반환
-        String header = request.getHeader("Accept");
-        if (header != null && header.contains("application/json")) {
+        if (isApiRequest(request)) {
             return ResponseEntity
                     .status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(new BaseResDto("5000", "서버 내부 오류가 발생했습니다."));
@@ -45,5 +44,12 @@ public class GlobalExceptionHandler {
         mav.addObject("message", e.getMessage());
         mav.setViewName("error");
         return mav;
+    }
+
+    private boolean isApiRequest(HttpServletRequest request) {
+        String uri = request.getRequestURI();
+        String accept = request.getHeader("Accept");
+        return (uri != null && uri.startsWith("/api/"))
+                || (accept != null && accept.contains("application/json"));
     }
 }

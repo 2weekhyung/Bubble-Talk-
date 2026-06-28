@@ -28,7 +28,7 @@ public class BaseResDto {
     }
 
     public BaseResDto fail(Object result){
-        this.code = "9999";
+        this.code = "4000";
         this.message = "실패";
         this.result = result;
         return this;

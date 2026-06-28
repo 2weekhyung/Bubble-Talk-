@@ -855,3 +855,25 @@ CREATE TABLE security_event_log (
     - 공개 채팅방 목록이 10개씩 나뉘어 표시되어 화면 밀도를 유지하면서 최근 생성 방 중심으로 탐색할 수 있게 됨.
 - **적용 파일**:
     - `ChatRoomRepository.java`, `ChatRoomService.java`, `ChatRoomRestController.java`, `main.html`, `main.css`, `main.js`, `ChatRoomServiceTest.java`
+
+## API 에러 응답 표준화
+
+- **문제**:
+    - 일부 API는 `BusinessException`을 HTTP 200으로 내려주고, 일부 컨트롤러는 직접 `4002` 또는 `5000` 응답을 만들어 반환하고 있었음.
+    - 같은 비즈니스 오류라도 API마다 HTTP status와 error code가 달라 프론트엔드 예외 처리와 API 계약이 불명확했음.
+- **원인**:
+    - `GlobalExceptionHandler`와 컨트롤러별 `try-catch`가 혼재되어 있었음.
+    - 공통 응답 DTO는 있었지만 실패 응답의 HTTP status 정책이 통일되어 있지 않았음.
+- **해결**:
+    - `BusinessException` 기본 코드를 `4000`으로 정리함.
+    - `GlobalExceptionHandler`에서 `BusinessException`은 HTTP 400으로 통일함.
+    - API 경로의 예상치 못한 예외는 HTTP 500과 `code=5000`으로 통일함.
+    - 메뉴/채팅방 컨트롤러의 개별 `try-catch`를 제거하고 전역 예외 핸들러를 타도록 정리함.
+    - 투표 운영 시간이 아닐 때 차단하는 인터셉터 응답도 `BaseResDto` 형태로 맞춤.
+    - 프론트 공통 AJAX에서 실패 응답의 `code`, `status`, `result`를 Error 객체에 보존하도록 개선함.
+- **결과**:
+    - REST API 실패 응답이 `BaseResDto(code, message, result)` 형태로 통일됨.
+    - 프론트엔드는 HTTP status와 message를 일관되게 처리할 수 있게 됨.
+    - 컨트롤러는 정상 흐름만 담당하고, 예외 응답 정책은 전역 핸들러가 담당하도록 책임이 분리됨.
+- **적용 파일**:
+    - `BusinessException.java`, `GlobalExceptionHandler.java`, `BaseResDto.java`, `LunchEventInterceptor.java`, `MenuRestController.java`, `ChatRoomRestController.java`, `common-ajax.js`, `GlobalExceptionHandlerTest.java`

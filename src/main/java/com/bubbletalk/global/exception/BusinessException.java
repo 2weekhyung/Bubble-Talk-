@@ -4,11 +4,13 @@ import lombok.Getter;
 
 @Getter
 public class BusinessException extends RuntimeException {
+    public static final String DEFAULT_CODE = "4000";
+
     private final String code;
 
     public BusinessException(String message) {
         super(message);
-        this.code = "9999";
+        this.code = DEFAULT_CODE;
     }
 
     public BusinessException(String code, String message) {
