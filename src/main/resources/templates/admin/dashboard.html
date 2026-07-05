@@ -49,11 +49,30 @@
         <div class="admin-main-grid">
             <section class="admin-card span-two">
                 <div class="admin-section-head"><div><span class="admin-kicker">Room management</span><h2>전체 채팅방</h2></div></div>
+                <div class="admin-filter-row">
+                    <select id="admin-room-visibility">
+                        <option value="">전체 공개 범위</option>
+                        <option value="PUBLIC">공개방</option>
+                        <option value="PRIVATE">비공개방</option>
+                    </select>
+                    <select id="admin-room-status">
+                        <option value="">전체 상태</option>
+                        <option value="OPEN">OPEN</option>
+                        <option value="FULL">FULL</option>
+                        <option value="CLOSED">CLOSED</option>
+                    </select>
+                    <button type="button" onclick="ADMIN.fetchRooms(0)">조회</button>
+                </div>
                 <div class="admin-table-wrap">
                     <table class="admin-table">
                         <thead><tr><th>코드</th><th>방 이름</th><th>공개</th><th>상태</th><th>인원</th><th>생성 시각</th><th>종료 시각</th><th>관리</th></tr></thead>
                         <tbody id="admin-room-list"></tbody>
                     </table>
+                </div>
+                <div class="admin-pagination">
+                    <button id="admin-room-prev" type="button" onclick="ADMIN.prevRoomPage()"><i class="fa-solid fa-chevron-left"></i> 이전</button>
+                    <span id="admin-room-page-label">1 / 1</span>
+                    <button id="admin-room-next" type="button" onclick="ADMIN.nextRoomPage()">다음 <i class="fa-solid fa-chevron-right"></i></button>
                 </div>
             </section>
 
@@ -91,40 +110,68 @@
             <section class="admin-card span-two">
                 <div class="admin-section-head">
                     <div><span class="admin-kicker">Security events</span><h2>보안 이벤트 로그</h2></div>
-                    <button onclick="ADMIN.fetchSecurityEvents()" class="admin-icon-btn"><i class="fa-solid fa-rotate"></i></button>
+                    <button onclick="ADMIN.fetchSecurityEvents(0)" class="admin-icon-btn"><i class="fa-solid fa-rotate"></i></button>
                 </div>
-                <div class="admin-inline-form">
-                    <select id="security-event-type">
-                        <option value="">전체 이벤트</option>
-                        <option value="ROOM_CREATED">ROOM_CREATED</option>
-                        <option value="ROOM_ENTER">ROOM_ENTER</option>
-                        <option value="ROOM_LEAVE">ROOM_LEAVE</option>
-                        <option value="MESSAGE_SEND">MESSAGE_SEND</option>
-                        <option value="SYSTEM_MESSAGE_SEND">SYSTEM_MESSAGE_SEND</option>
-                        <option value="VOTE_CREATED">VOTE_CREATED</option>
-                        <option value="VOTE_SUBMIT">VOTE_SUBMIT</option>
-                        <option value="ROOM_CLOSED">ROOM_CLOSED</option>
-                        <option value="ADMIN_ROOM_CLOSED">ADMIN_ROOM_CLOSED</option>
-                        <option value="STALE_SESSION_CLEANUP">STALE_SESSION_CLEANUP</option>
-                        <option value="SECURITY_LOG_VIEW">SECURITY_LOG_VIEW</option>
-                    </select>
-                    <select id="security-severity">
-                        <option value="">전체 중요도</option>
-                        <option value="INFO">INFO</option>
-                        <option value="WARN">WARN</option>
-                        <option value="DANGER">DANGER</option>
-                        <option value="BLOCKED">BLOCKED</option>
-                    </select>
-                    <input type="text" id="security-room-code" placeholder="roomCode">
-                    <input type="text" id="security-guest-id" placeholder="guestId">
-                    <input type="text" id="security-ip-address" placeholder="IP">
-                    <button onclick="ADMIN.fetchSecurityEvents()">조회</button>
+                <div class="security-filter-grid">
+                    <label>
+                        <span>이벤트</span>
+                        <select id="security-event-type">
+                            <option value="">전체 이벤트</option>
+                            <option value="ROOM_CREATED">ROOM_CREATED</option>
+                            <option value="ROOM_ENTER">ROOM_ENTER</option>
+                            <option value="ROOM_LEAVE">ROOM_LEAVE</option>
+                            <option value="MESSAGE_SEND">MESSAGE_SEND</option>
+                            <option value="SYSTEM_MESSAGE_SEND">SYSTEM_MESSAGE_SEND</option>
+                            <option value="VOTE_CREATED">VOTE_CREATED</option>
+                            <option value="VOTE_SUBMIT">VOTE_SUBMIT</option>
+                            <option value="ROOM_CLOSED">ROOM_CLOSED</option>
+                            <option value="ADMIN_ROOM_CLOSED">ADMIN_ROOM_CLOSED</option>
+                            <option value="STALE_SESSION_CLEANUP">STALE_SESSION_CLEANUP</option>
+                            <option value="SECURITY_LOG_VIEW">SECURITY_LOG_VIEW</option>
+                        </select>
+                    </label>
+                    <label>
+                        <span>중요도</span>
+                        <select id="security-severity">
+                            <option value="">전체 중요도</option>
+                            <option value="INFO">INFO</option>
+                            <option value="WARN">WARN</option>
+                            <option value="DANGER">DANGER</option>
+                            <option value="BLOCKED">BLOCKED</option>
+                        </select>
+                    </label>
+                    <label>
+                        <span>방 코드</span>
+                        <input type="text" id="security-room-code" placeholder="ROOM0001">
+                    </label>
+                    <label>
+                        <span>GuestId</span>
+                        <input type="text" id="security-guest-id" placeholder="guestId">
+                    </label>
+                    <label>
+                        <span>IP</span>
+                        <input type="text" id="security-ip-address" placeholder="127.0.0.1">
+                    </label>
+                    <label>
+                        <span>시작 일시</span>
+                        <input type="datetime-local" id="security-start-date">
+                    </label>
+                    <label>
+                        <span>종료 일시</span>
+                        <input type="datetime-local" id="security-end-date">
+                    </label>
+                    <button type="button" onclick="ADMIN.fetchSecurityEvents(0)">조회</button>
                 </div>
                 <div class="admin-table-wrap">
                     <table class="admin-table compact">
                         <thead><tr><th>시각</th><th>이벤트</th><th>중요도</th><th>방 코드</th><th>GuestId</th><th>IP</th><th>사유</th></tr></thead>
                         <tbody id="security-event-list"></tbody>
                     </table>
+                </div>
+                <div class="admin-pagination">
+                    <button id="security-event-prev" type="button" onclick="ADMIN.prevSecurityEventPage()"><i class="fa-solid fa-chevron-left"></i> 이전</button>
+                    <span id="security-event-page-label">1 / 1</span>
+                    <button id="security-event-next" type="button" onclick="ADMIN.nextSecurityEventPage()">다음 <i class="fa-solid fa-chevron-right"></i></button>
                 </div>
             </section>
 

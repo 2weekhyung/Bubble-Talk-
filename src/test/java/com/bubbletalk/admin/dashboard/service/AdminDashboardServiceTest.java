@@ -13,6 +13,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.SetOperations;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -85,6 +87,18 @@ class AdminDashboardServiceTest {
         assertEquals(0L, result.getActiveSessions());
         assertEquals(0L, result.getTodayMenuCount());
         assertEquals(0L, result.getTodayVoteCount());
+    }
+
+    @Test
+    void roomsReturnsPagedAdminRooms() {
+        PageRequest pageable = PageRequest.of(0, 20);
+        when(chatRoomService.getAdminRooms(pageable))
+                .thenReturn(new PageImpl<>(List.of(room("ROOM0001", false, RoomStatus.OPEN)), pageable, 1));
+
+        var result = service().getRooms(pageable);
+
+        assertEquals(1L, result.getTotalElements());
+        assertEquals("ROOM0001", result.getContent().get(0).getRoomCode());
     }
 
     @Test

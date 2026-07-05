@@ -12,6 +12,8 @@ import com.bubbletalk.securitylog.entity.Severity;
 import com.bubbletalk.securitylog.service.SecurityEventLogService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
@@ -65,6 +67,14 @@ public class AdminDashboardService {
 
     public List<AdminChatRoomResDto> getRooms() {
         return chatRoomService.getAdminRooms();
+    }
+
+    public Page<AdminChatRoomResDto> getRooms(Pageable pageable) {
+        return chatRoomService.getAdminRooms(pageable);
+    }
+
+    public Page<AdminChatRoomResDto> getRooms(Pageable pageable, Boolean privateRoom, RoomStatus status) {
+        return chatRoomService.getAdminRooms(pageable, privateRoom, status);
     }
 
     public AdminChatRoomResDto closeRoom(String roomCode) {

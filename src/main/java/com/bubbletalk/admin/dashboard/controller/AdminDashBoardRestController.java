@@ -2,7 +2,9 @@ package com.bubbletalk.admin.dashboard.controller;
 
 import com.bubbletalk.base.dto.BaseResDto;
 import com.bubbletalk.admin.dashboard.service.AdminDashboardService;
+import com.bubbletalk.chatroom.entity.RoomStatus;
 import com.bubbletalk.menu.service.MenuService;
+import com.bubbletalk.global.exception.BusinessException;
 import com.bubbletalk.securitylog.dto.SecurityEventLogSearchCondition;
 import com.bubbletalk.securitylog.entity.EventType;
 import com.bubbletalk.securitylog.entity.Severity;
@@ -38,8 +40,15 @@ public class AdminDashBoardRestController {
     }
 
     @GetMapping("/rooms")
-    public ResponseEntity<BaseResDto> getRooms() {
-        return ResponseEntity.ok(BaseResDto.ok(adminDashboardService.getRooms()));
+    public ResponseEntity<BaseResDto> getRooms(
+            @PageableDefault(size = 20, sort = "createdDate", direction = Sort.Direction.DESC) Pageable pageable,
+            @RequestParam(required = false) String visibility,
+            @RequestParam(required = false) String status) {
+        return ResponseEntity.ok(BaseResDto.ok(adminDashboardService.getRooms(
+                pageable,
+                parseVisibility(visibility),
+                parseRoomStatus(status)
+        )));
     }
 
     @PostMapping("/rooms/{roomCode}/close")
@@ -101,5 +110,29 @@ public class AdminDashBoardRestController {
         
         menuService.updateEventTimes(startTime, endTime);
         return ResponseEntity.ok(BaseResDto.ok());
+    }
+
+    private Boolean parseVisibility(String value) {
+        if (value == null || value.isBlank() || "ALL".equalsIgnoreCase(value)) {
+            return null;
+        }
+        if ("PRIVATE".equalsIgnoreCase(value)) {
+            return true;
+        }
+        if ("PUBLIC".equalsIgnoreCase(value)) {
+            return false;
+        }
+        throw new BusinessException("올바르지 않은 채팅방 공개 범위입니다.");
+    }
+
+    private RoomStatus parseRoomStatus(String value) {
+        if (value == null || value.isBlank() || "ALL".equalsIgnoreCase(value)) {
+            return null;
+        }
+        try {
+            return RoomStatus.valueOf(value.trim().toUpperCase());
+        } catch (IllegalArgumentException e) {
+            throw new BusinessException("올바르지 않은 채팅방 상태입니다.");
+        }
     }
 }

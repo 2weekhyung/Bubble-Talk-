@@ -18,6 +18,7 @@ import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -135,6 +136,35 @@ public class ChatRoomService {
                     );
                 })
                 .toList();
+    }
+
+    public Page<AdminChatRoomResDto> getAdminRooms(Pageable pageable) {
+        return getAdminRooms(pageable, null, null);
+    }
+
+    public Page<AdminChatRoomResDto> getAdminRooms(Pageable pageable, Boolean privateRoom, RoomStatus status) {
+        return chatRoomRepository.findAll(toAdminRoomSpecification(privateRoom, status), pageable)
+                .map(room -> {
+                    long currentParticipants = getCurrentParticipants(room.getRoomCode());
+                    return AdminChatRoomResDto.from(
+                            room,
+                            currentParticipants,
+                            getEffectiveStatus(room, currentParticipants)
+                    );
+                });
+    }
+
+    private Specification<ChatRoom> toAdminRoomSpecification(Boolean privateRoom, RoomStatus status) {
+        return (root, query, cb) -> {
+            List<jakarta.persistence.criteria.Predicate> predicates = new java.util.ArrayList<>();
+            if (privateRoom != null) {
+                predicates.add(cb.equal(root.get("privateRoom"), privateRoom));
+            }
+            if (status != null) {
+                predicates.add(cb.equal(root.get("status"), status));
+            }
+            return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
+        };
     }
 
     public ChatRoomResDto getRoom(String roomCode) {

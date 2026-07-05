@@ -856,6 +856,38 @@ CREATE TABLE security_event_log (
 - **적용 파일**:
     - `ChatRoomRepository.java`, `ChatRoomService.java`, `ChatRoomRestController.java`, `main.html`, `main.css`, `main.js`, `ChatRoomServiceTest.java`
 
+## 관리자 채팅방 목록 전체 조회 문제
+
+- **문제**:
+    - 관리자 대시보드는 공개방뿐 아니라 비공개방과 종료된 방까지 전체 채팅방을 조회하므로, 시간이 지날수록 응답 크기와 테이블 렌더링 비용이 커질 수 있었음.
+- **원인**:
+    - `/api/admin/rooms` API가 전체 방 목록을 한 번에 반환하고 있었음.
+- **해결**:
+    - 관리자 방 목록 API를 `page`, `size`, `sort` 기반 페이지 응답으로 변경함.
+    - 기본 조회는 최신 생성순(`createdDate desc`) 20개 단위로 처리함.
+    - 공개/비공개, OPEN/FULL/CLOSED 상태 필터를 추가해 운영자가 원하는 방만 조회할 수 있도록 함.
+    - 관리자 화면에 이전/다음 버튼과 총 개수, 현재 페이지 정보를 추가함.
+- **결과**:
+    - 관리자 대시보드도 데이터가 누적되는 상황을 고려해 안정적으로 목록을 탐색하고, 상태별 운영 대상을 빠르게 찾을 수 있게 됨.
+- **적용 파일**:
+    - `ChatRoomService.java`, `AdminDashboardService.java`, `AdminDashBoardRestController.java`, `dashboard.html`, `main.css`, `admin.js`, `AdminDashboardServiceTest.java`, `AdminDashBoardRestControllerTest.java`
+
+## 보안 이벤트 로그 페이지 탐색 불편
+
+- **문제**:
+    - 보안 이벤트 로그 API는 `Page` 응답을 반환하지만, 관리자 화면에서는 첫 페이지의 로그만 렌더링하고 다음 페이지로 이동할 수 없었음.
+- **원인**:
+    - 프론트에서 `content`만 사용하고 `number`, `totalPages`, `totalElements` 같은 페이지 메타데이터를 UI에 반영하지 않았음.
+- **해결**:
+    - 보안 이벤트 로그 영역에 이전/다음 버튼과 현재 페이지, 총 개수 표시를 추가함.
+    - 시작/종료 일시 입력을 추가해 특정 기간의 이벤트만 조회할 수 있도록 함.
+    - 필터 조회와 새로고침은 1페이지부터 다시 조회하도록 처리함.
+    - 페이지 이동 시 기존 필터 조건을 유지한 채 `page`, `size`, `sort` 파라미터를 함께 전송하도록 변경함.
+- **결과**:
+    - 이벤트 로그가 누적되어도 관리자가 기간과 필터 조건을 유지하면서 페이지 단위로 로그를 탐색할 수 있게 됨.
+- **적용 파일**:
+    - `SecurityEventLogSearchCondition.java`, `dashboard.html`, `admin.js`, `README.md`
+
 ## API 에러 응답 표준화
 
 - **문제**:

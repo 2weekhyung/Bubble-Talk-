@@ -1857,13 +1857,75 @@ body:has(.admin-shell) .app-footer {
     font-weight: 900;
 }
 
+.admin-pagination {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 14px;
+}
+
+.admin-pagination button {
+    min-height: 34px;
+    padding: 0 12px;
+    border: 1px solid #dce1e8;
+    border-radius: 9px;
+    background: #ffffff;
+    color: #344054;
+    cursor: pointer;
+    font-size: .72rem;
+    font-weight: 900;
+}
+
+.admin-pagination button:disabled {
+    opacity: .45;
+    cursor: not-allowed;
+}
+
+.admin-pagination span {
+    color: #697386;
+    font-size: .72rem;
+    font-weight: 900;
+}
+
 .admin-inline-form {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 8px;
 }
 
+.admin-filter-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(130px, 180px)) auto;
+    gap: 8px;
+    margin-bottom: 14px;
+}
+
+.security-filter-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(150px, 1fr)) auto;
+    gap: 10px;
+    align-items: end;
+    margin-bottom: 14px;
+}
+
+.security-filter-grid label {
+    min-width: 0;
+    display: grid;
+    gap: 6px;
+}
+
+.security-filter-grid span {
+    color: #697386;
+    font-size: .66rem;
+    font-weight: 900;
+}
+
 .admin-inline-form input,
+.admin-inline-form select,
+.admin-filter-row select,
+.security-filter-grid input,
+.security-filter-grid select,
 .admin-time-grid input {
     width: 100%;
     height: 42px;
@@ -1875,6 +1937,8 @@ body:has(.admin-shell) .app-footer {
 }
 
 .admin-inline-form button,
+.admin-filter-row button,
+.security-filter-grid button,
 .admin-wide-btn {
     border: 0;
     border-radius: 10px;
@@ -1883,7 +1947,10 @@ body:has(.admin-shell) .app-footer {
     font-weight: 900;
 }
 
-.admin-inline-form button {
+.admin-inline-form button,
+.admin-filter-row button,
+.security-filter-grid button {
+    min-height: 42px;
     padding: 0 16px;
 }
 
@@ -2033,6 +2100,18 @@ body:has(.admin-shell) .app-footer {
         grid-column: auto;
     }
 
+    .admin-filter-row {
+        grid-template-columns: 1fr;
+    }
+
+    .security-filter-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .security-filter-grid button {
+        grid-column: 1 / -1;
+    }
+
     .admin-hero {
         align-items: flex-start;
         flex-direction: column;
@@ -2094,6 +2173,10 @@ body:has(.admin-shell) .app-footer {
 
     #btn-copy-room-code {
         min-height: 40px;
+    }
+
+    .security-filter-grid {
+        grid-template-columns: 1fr;
     }
 
     .login-shell {

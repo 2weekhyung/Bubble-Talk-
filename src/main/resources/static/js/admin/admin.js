@@ -3,6 +3,14 @@
  */
 const ADMIN = {
     stompClient: null,
+    roomPage: 0,
+    roomPageSize: 20,
+    roomTotalPages: 1,
+    roomTotalElements: 0,
+    securityEventPage: 0,
+    securityEventPageSize: 20,
+    securityEventTotalPages: 1,
+    securityEventTotalElements: 0,
 
     init: function() {
         console.log("관리자 대시보드 초기화...");
@@ -192,11 +200,25 @@ const ADMIN = {
             : 'text-[10px] px-2 py-1 rounded border font-bold uppercase text-red-500 border-red-500/30 bg-red-500/10';
     },
 
-    fetchRooms: async function() {
+    fetchRooms: async function(page = this.roomPage) {
         try {
-            const response = await COMMON_AJAX.get('/api/admin/rooms');
+            const targetPage = Math.max(Number(page) || 0, 0);
+            const params = new URLSearchParams();
+            params.set('page', String(targetPage));
+            params.set('size', String(this.roomPageSize));
+            params.set('sort', 'createdDate,desc');
+            this.appendParam(params, 'visibility', document.getElementById('admin-room-visibility')?.value);
+            this.appendParam(params, 'status', document.getElementById('admin-room-status')?.value);
+
+            const response = await COMMON_AJAX.get(`/api/admin/rooms?${params.toString()}`);
             if (response.code === "0000") {
-                this.renderRooms(response.result || []);
+                const result = response.result || {};
+                const rooms = Array.isArray(result) ? result : (result.content || []);
+                this.roomPage = Array.isArray(result) ? 0 : (result.number || 0);
+                this.roomTotalPages = Array.isArray(result) ? 1 : Math.max(result.totalPages || 1, 1);
+                this.roomTotalElements = Array.isArray(result) ? rooms.length : (result.totalElements || rooms.length);
+                this.renderRooms(rooms);
+                this.renderRoomPagination();
             }
         } catch (e) {
             console.error("관리자 채팅방 목록 조회 실패", e);
@@ -249,7 +271,7 @@ const ADMIN = {
         try {
             const response = await COMMON_AJAX.post(`/api/admin/rooms/${roomCode}/close`, {});
             if (response.code === '0000') {
-                await Promise.all([this.fetchSummary(), this.fetchRooms()]);
+                await Promise.all([this.fetchSummary(), this.fetchRooms(this.roomPage)]);
                 alert('채팅방이 종료되었습니다.');
             }
         } catch (e) {
@@ -263,7 +285,7 @@ const ADMIN = {
             const response = await COMMON_AJAX.post('/api/admin/realtime/cleanup-stale-sessions', {});
             if (response.code === '0000') {
                 const result = response.result;
-                await Promise.all([this.fetchSummary(), this.fetchRooms()]);
+                await Promise.all([this.fetchSummary(), this.fetchRooms(this.roomPage)]);
                 alert(`${result.message}\n검사 세션: ${result.scannedSessions}\n영향받은 방: ${result.affectedRooms}`);
             }
         } catch (e) {
@@ -271,20 +293,54 @@ const ADMIN = {
         }
     },
 
-    fetchSecurityEvents: async function() {
+    renderRoomPagination: function() {
+        const label = document.getElementById('admin-room-page-label');
+        if (label) {
+            label.textContent = `${this.roomPage + 1} / ${this.roomTotalPages} · 총 ${this.roomTotalElements.toLocaleString()}개`;
+        }
+
+        const prev = document.getElementById('admin-room-prev');
+        if (prev) prev.disabled = this.roomPage <= 0;
+
+        const next = document.getElementById('admin-room-next');
+        if (next) next.disabled = this.roomPage >= this.roomTotalPages - 1;
+    },
+
+    prevRoomPage: function() {
+        if (this.roomPage > 0) {
+            this.fetchRooms(this.roomPage - 1);
+        }
+    },
+
+    nextRoomPage: function() {
+        if (this.roomPage < this.roomTotalPages - 1) {
+            this.fetchRooms(this.roomPage + 1);
+        }
+    },
+
+    fetchSecurityEvents: async function(page = this.securityEventPage) {
         const params = new URLSearchParams();
         this.appendParam(params, 'eventType', document.getElementById('security-event-type')?.value);
         this.appendParam(params, 'severity', document.getElementById('security-severity')?.value);
         this.appendParam(params, 'roomCode', document.getElementById('security-room-code')?.value);
         this.appendParam(params, 'guestId', document.getElementById('security-guest-id')?.value);
         this.appendParam(params, 'ipAddress', document.getElementById('security-ip-address')?.value);
-        params.set('size', '20');
+        this.appendDateTimeParam(params, 'startDate', document.getElementById('security-start-date')?.value);
+        this.appendDateTimeParam(params, 'endDate', document.getElementById('security-end-date')?.value);
+        params.set('page', String(Math.max(Number(page) || 0, 0)));
+        params.set('size', String(this.securityEventPageSize));
         params.set('sort', 'createdAt,desc');
 
         try {
             const response = await COMMON_AJAX.get(`/api/admin/security-events?${params.toString()}`);
             if (response.code === '0000') {
-                this.renderSecurityEvents(response.result?.content || []);
+                const result = response.result || {};
+                const events = result.content || [];
+                this.securityEventPage = result.number || 0;
+                this.securityEventTotalPages = Math.max(result.totalPages || 1, 1);
+                this.securityEventTotalElements = result.totalElements || events.length;
+                this.renderSecurityEvents(events);
+                this.renderSecurityEventPagination();
             } else {
                 alert(response.message || '보안 이벤트 로그 조회 실패');
             }
@@ -294,6 +350,12 @@ const ADMIN = {
     },
 
     appendParam: function(params, key, value) {
+        if (value && String(value).trim()) {
+            params.set(key, String(value).trim());
+        }
+    },
+
+    appendDateTimeParam: function(params, key, value) {
         if (value && String(value).trim()) {
             params.set(key, String(value).trim());
         }
@@ -331,6 +393,31 @@ const ADMIN = {
             });
             list.appendChild(tr);
         });
+    },
+
+    renderSecurityEventPagination: function() {
+        const label = document.getElementById('security-event-page-label');
+        if (label) {
+            label.textContent = `${this.securityEventPage + 1} / ${this.securityEventTotalPages} · 총 ${this.securityEventTotalElements.toLocaleString()}개`;
+        }
+
+        const prev = document.getElementById('security-event-prev');
+        if (prev) prev.disabled = this.securityEventPage <= 0;
+
+        const next = document.getElementById('security-event-next');
+        if (next) next.disabled = this.securityEventPage >= this.securityEventTotalPages - 1;
+    },
+
+    prevSecurityEventPage: function() {
+        if (this.securityEventPage > 0) {
+            this.fetchSecurityEvents(this.securityEventPage - 1);
+        }
+    },
+
+    nextSecurityEventPage: function() {
+        if (this.securityEventPage < this.securityEventTotalPages - 1) {
+            this.fetchSecurityEvents(this.securityEventPage + 1);
+        }
     },
 
     formatDateTime: function(value) {
@@ -534,6 +621,16 @@ ADMIN.renderRooms = function(rooms) {
     const list = document.getElementById('admin-room-list');
     if (!list) return;
     list.innerHTML = '';
+
+    if (!rooms.length) {
+        const tr = document.createElement('tr');
+        const td = document.createElement('td');
+        td.colSpan = 8;
+        td.textContent = '표시할 채팅방이 없습니다.';
+        tr.appendChild(td);
+        list.appendChild(tr);
+        return;
+    }
 
     rooms.forEach(room => {
         const tr = document.createElement('tr');
