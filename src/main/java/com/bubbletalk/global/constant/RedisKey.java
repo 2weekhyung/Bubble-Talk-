@@ -63,6 +63,8 @@ public enum RedisKey {
      */
     LUNCH_EVENT_STATUS("lunch:event:status"),
 
+    LUNCH_EVENT_STATUS_OVERRIDE("lunch:event:status:override"),
+
     /**
      * 점심 투표 운영 시작 시간 (Value)
      * 구조: lunch:event:start-time

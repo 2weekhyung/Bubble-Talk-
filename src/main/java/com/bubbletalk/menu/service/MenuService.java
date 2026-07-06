@@ -18,7 +18,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
@@ -38,6 +41,8 @@ public class MenuService {
 
     private static final int MENU_NAME_MAX_LENGTH = 20;
     private static final int MENU_ADD_LIMIT_SECONDS = 30;
+    private static final ZoneId EVENT_ZONE = ZoneId.of("Asia/Seoul");
+    private static final DateTimeFormatter DATE_KEY_FORMATTER = DateTimeFormatter.ofPattern("yyyyMMdd");
 
     private final MenuRepository menuRepository;
     private final LunchHistoryRepository lunchHistoryRepository;
@@ -50,7 +55,7 @@ public class MenuService {
     public void saveMenu(String menuName) {
         String normalizedMenuName = normalizeMenuName(menuName);
         DailyMenu menu = menuRepository.findByMenuName(normalizedMenuName).orElse(null);
-        String today = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
+        String today = todayKey();
         String rankingKey = RedisKey.LUNCH_RANKING.with(today);
 
         if (menu == null) {
@@ -86,7 +91,7 @@ public class MenuService {
             menu = menuRepository.save(menu);
             
             // Redis ZSET 초기화 (0점)
-            String today = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
+            String today = todayKey();
             redisTemplate.opsForZSet().add(RedisKey.LUNCH_RANKING.with(today), menu.getId().toString(), 0);
             log.info("새로운 메뉴 등록: {}", menuName);
         }
@@ -100,7 +105,7 @@ public class MenuService {
      */
     @Transactional
     public void increaseVote(Long menuId, String voterIp) {
-        String today = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
+        String today = todayKey();
         String rankingKey = RedisKey.LUNCH_RANKING.with(today);
         String voterKey = RedisKey.LUNCH_VOTER.with(today + ":" + menuId);
 
@@ -170,6 +175,11 @@ public class MenuService {
      */
     @Transactional
     public void updateEventStatus(String status) {
+        if (!"OPEN".equals(status) && !"CLOSED".equals(status)) {
+            throw new BusinessException("Invalid event status.");
+        }
+
+        redisTemplate.opsForValue().set(RedisKey.LUNCH_EVENT_STATUS_OVERRIDE.getPrefix(), status);
         redisTemplate.opsForValue().set(RedisKey.LUNCH_EVENT_STATUS.getPrefix(), status);
         log.info("관리자에 의해 이벤트 상태가 강제로 변경되었습니다: {}", status);
     }
@@ -192,9 +202,55 @@ public class MenuService {
      */
     @Transactional
     public void updateEventTimes(String startTime, String endTime) {
+        LocalTime parsedStartTime = parseEventTime(startTime, "시작 시간");
+        LocalTime parsedEndTime = parseEventTime(endTime, "종료 시간");
+        if (!parsedStartTime.isBefore(parsedEndTime)) {
+            throw new BusinessException("투표 종료 시간은 시작 시간보다 늦어야 합니다.");
+        }
+
         redisTemplate.opsForValue().set(RedisKey.LUNCH_START_TIME.getPrefix(), startTime);
         redisTemplate.opsForValue().set(RedisKey.LUNCH_END_TIME.getPrefix(), endTime);
+        redisTemplate.delete(RedisKey.LUNCH_EVENT_STATUS_OVERRIDE.getPrefix());
+        refreshEventStatusBySchedule();
         log.info("관리자에 의해 운영 시간이 변경되었습니다: {} ~ {}", startTime, endTime);
+    }
+
+    public String getStoredEventStatus() {
+        Object status = redisTemplate.opsForValue().get(RedisKey.LUNCH_EVENT_STATUS.getPrefix());
+        return status != null ? status.toString() : "CLOSED";
+    }
+
+    public String refreshEventStatusBySchedule() {
+        Object override = redisTemplate.opsForValue().get(RedisKey.LUNCH_EVENT_STATUS_OVERRIDE.getPrefix());
+        if ("OPEN".equals(override) || "CLOSED".equals(override)) {
+            String forcedStatus = override.toString();
+            redisTemplate.opsForValue().set(RedisKey.LUNCH_EVENT_STATUS.getPrefix(), forcedStatus);
+            return forcedStatus;
+        }
+
+        String status = isEventOpenNow() ? "OPEN" : "CLOSED";
+        redisTemplate.opsForValue().set(RedisKey.LUNCH_EVENT_STATUS.getPrefix(), status);
+        return status;
+    }
+
+    public boolean isEventOpenNow() {
+        java.util.Map<String, String> eventTimes = getEventTimes();
+        LocalTime now = LocalTime.now(EVENT_ZONE);
+        LocalTime startTime = parseEventTime(eventTimes.get("startTime"), "시작 시간");
+        LocalTime endTime = parseEventTime(eventTimes.get("endTime"), "종료 시간");
+        return !now.isBefore(startTime) && now.isBefore(endTime);
+    }
+
+    private LocalTime parseEventTime(String value, String fieldName) {
+        if (value == null || value.isBlank()) {
+            throw new BusinessException(fieldName + "을 입력해주세요.");
+        }
+
+        try {
+            return LocalTime.parse(value);
+        } catch (DateTimeParseException e) {
+            throw new BusinessException(fieldName + " 형식이 올바르지 않습니다. HH:mm 형식으로 입력해주세요.");
+        }
     }
 
     /**
@@ -202,7 +258,7 @@ public class MenuService {
      */
     @Transactional
     public void resetDailyData() {
-        String today = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
+        String today = todayKey();
         
         // 1. 랭킹 데이터 삭제
         redisTemplate.delete(RedisKey.LUNCH_RANKING.with(today));
@@ -221,7 +277,7 @@ public class MenuService {
      */
     public DailyMenuResDto getTopRankings() {
         try {
-            String today = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
+            String today = todayKey();
             String rankingKey = RedisKey.LUNCH_RANKING.with(today);
 
             Set<Object> topIds = redisTemplate.opsForZSet().reverseRange(rankingKey, 0, 9);
@@ -256,13 +312,13 @@ public class MenuService {
     }
 
     public long getTodayMenuCount() {
-        String today = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
+        String today = todayKey();
         Long count = redisTemplate.opsForZSet().zCard(RedisKey.LUNCH_RANKING.with(today));
         return count != null ? count : 0L;
     }
 
     public long getTodayVoteCount() {
-        String today = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
+        String today = todayKey();
         Set<ZSetOperations.TypedTuple<Object>> entries = redisTemplate.opsForZSet()
                 .rangeWithScores(RedisKey.LUNCH_RANKING.with(today), 0, -1);
         if (entries == null || entries.isEmpty()) {
@@ -314,7 +370,7 @@ public LunchHistoryResDto getYesterdayWinner() {
  */
     @Transactional
     public void syncRedisToDb() {
-        String todayStr = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
+        String todayStr = todayKey();
         String rankingKey = RedisKey.LUNCH_RANKING.with(todayStr);
 
         // Redis ZSET의 모든 데이터를 점수와 함께 가져옴
@@ -332,7 +388,7 @@ public LunchHistoryResDto getYesterdayWinner() {
             if (menu != null) {
                 // 결과 이력 테이블에 최종 순위와 득표수 저장
                 lunchHistoryRepository.save(LunchHistory.builder()
-                        .targetDate(LocalDate.now())
+                        .targetDate(today())
                         .menuName(menu.getMenuName())
                         .voteCount(score)
                         .ranking(rank++)
@@ -343,5 +399,13 @@ public LunchHistoryResDto getYesterdayWinner() {
         // 정산 끝났으니 오늘 데이터 삭제 (내일을 위해 초기화)
         redisTemplate.delete(rankingKey);
         log.info("정산 완료. Redis 랭킹 데이터 삭제 완료.");
+    }
+
+    private LocalDate today() {
+        return LocalDate.now(EVENT_ZONE);
+    }
+
+    private String todayKey() {
+        return today().format(DATE_KEY_FORMATTER);
     }
 }

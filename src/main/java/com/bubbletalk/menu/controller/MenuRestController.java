@@ -2,7 +2,6 @@ package com.bubbletalk.menu.controller;
 
 import com.bubbletalk.base.dto.BaseResDto;
 import com.bubbletalk.guest.GuestIdSupport;
-import com.bubbletalk.global.constant.RedisKey;
 import com.bubbletalk.menu.dto.req.MenuAddReqDto;
 import com.bubbletalk.menu.dto.req.MenuVoteReqDto;
 import com.bubbletalk.menu.dto.res.DailyMenuResDto;
@@ -14,7 +13,6 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -32,7 +30,6 @@ public class MenuRestController {
 
     private final MenuService menuService;
     private final MenuSocketController socketController;
-    private final RedisTemplate<String, Object> redisTemplate;
     private final GuestIdSupport guestIdSupport;
     private final SecurityEventLogService securityEventLogService;
 
@@ -43,8 +40,8 @@ public class MenuRestController {
     @Operation(summary = "이벤트 상태 조회", description = "현재 점심 메뉴 투표가 활성화(OPEN) 상태인지 확인합니다.")
     @GetMapping("/status")
     public ResponseEntity<BaseResDto> getStatus() {
-        Object status = redisTemplate.opsForValue().get(RedisKey.LUNCH_EVENT_STATUS.getPrefix());
-        return ResponseEntity.ok(BaseResDto.ok(Map.of("status", status != null ? status : "CLOSED")));
+        String status = menuService.refreshEventStatusBySchedule();
+        return ResponseEntity.ok(BaseResDto.ok(Map.of("status", status)));
     }
 
     /**

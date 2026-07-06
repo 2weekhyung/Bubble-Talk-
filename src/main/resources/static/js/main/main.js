@@ -142,14 +142,12 @@ const MAINJS = {
             console.log('Connected: ' + frame);
 
             // [구독] 실시간 메뉴 랭킹 업데이트
-            this.stompClient.subscribe('/topic/menus', (response) => {
+            this.stompClient.subscribe('/topic/menus', async (response) => {
                 const updatedMenus = JSON.parse(response.body);
                 this.battleItems = updatedMenus.menuList;
                 
                 // 이벤트가 종료(데이터가 비어있거나 특정 조건)되면 자동으로 상태 확인 API 호출
-                if (!this.battleItems || this.battleItems.length === 0) {
-                    this.checkEventStatus();
-                }
+                await this.checkEventStatus();
 
                 if (this.state === 'VOTING') this.renderVoting();
                 if (this.state === 'FINISHED') this.renderResults();

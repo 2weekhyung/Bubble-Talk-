@@ -109,6 +109,7 @@ public class AdminDashBoardRestController {
         String endTime = body.get("endTime");
         
         menuService.updateEventTimes(startTime, endTime);
+        socketController.broadcastMenuUpdate();
         return ResponseEntity.ok(BaseResDto.ok());
     }
 
