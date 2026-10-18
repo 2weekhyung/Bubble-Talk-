@@ -394,7 +394,7 @@
     - 점심 투표 운영 시간을 09:00 ~ 14:00으로 설정했으나, 실제로는 오후 6시(18:00 KST)가 되어서야 투표가 활성화되는 현상 발생.
     - 원인 분석 결과, Docker 컨테이너 환경의 기본 시간대가 **UTC(세계 표준시)**로 설정되어 있어 한국 시간보다 9시간 느리게 작동함. (한국 18:00 = UTC 09:00)
 - **해결**:
-    - **JVM 레벨 TimeZone 고정**: `BubbleTalkApplication.java`에 `@PostConstruct`를 활용하여 서버 시작 시 `TimeZone.setDefault(TimeZone.getTimeZone("Asia/Seoul"))`를 실행하도록 설정.
+    - **JVM 레벨 TimeZone 고정**: `LunchPulseApplication.java`에 `@PostConstruct`를 활용하여 서버 시작 시 `TimeZone.setDefault(TimeZone.getTimeZone("Asia/Seoul"))`를 실행하도록 설정.
     - **이유**: Docker 환경 변수(`TZ`) 설정에 의존하지 않고, 애플리케이션 코드 레벨에서 한국 시간 기준의 비즈니스 로직(점심 투표)을 보장하기 위함.
 - **결과**: 인프라 환경(로컬, 도커, 클라우드 등)에 상관없이 항상 한국 시간(KST) 기준으로 09:00에 전쟁이 시작되고 14:00에 정산되는 일관성 확보.
 
@@ -538,7 +538,7 @@
 - **문제**:
     - 로그인 없이 사용해야 하는 `POST /api/menu/add`, `POST /api/menu/vote` 요청이 정상 JSON 응답 대신 `/login`으로 302 리다이렉트됨.
 - **영향**:
-    - 로그인·회원가입이 없는 BubbleTalk에서 핵심 참여 기능인 메뉴 추가와 투표를 익명 사용자가 이용할 수 없었음.
+    - 로그인·회원가입이 없는 LunchPulse에서 핵심 참여 기능인 메뉴 추가와 투표를 익명 사용자가 이용할 수 없었음.
 - **원인**:
     - 두 API는 `authorizeHttpRequests`에서 이미 `permitAll`이므로 인증 required 문제는 아니었음.
     - Spring Security CSRF 예외에는 `/ws-bubble/**`, `/api/rooms/**`만 등록되어 있어 CSRF 토큰 없는 메뉴·투표 POST가 차단됨.

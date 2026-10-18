@@ -3,7 +3,7 @@
     <!-- 로그 파일 저장 경로 -->
     <property name="LOG_PATH" value="./logs" />
     <!-- 로그 파일 이름 -->
-    <property name="LOG_FILE_NAME" value="bubble-talk" />
+    <property name="LOG_FILE_NAME" value="lunch-pulse" />
     <!-- 로그 출력 패턴 (날짜 시분초 [쓰레드] 레벨 클래스명 - 메시지) -->
     <property name="LOG_PATTERN" value="%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n" />
 
@@ -41,7 +41,7 @@
     </root>
 
     <!-- 우리 애플리케이션 코드는 상세히 기록 (DEBUG) -->
-    <logger name="com.bubbletalk" level="DEBUG" additivity="false">
+    <logger name="com.lunchpulse" level="DEBUG" additivity="false">
         <appender-ref ref="CONSOLE" />
         <appender-ref ref="FILE" />
     </logger>

@@ -1,10 +1,10 @@
-# LiveOpsBoard
+# LunchPulse
 
-Redis와 WebSocket을 활용한 실시간 익명 채팅·투표 운영 관리 시스템입니다.
+> 팀의 대화가 오늘의 선택이 되는 곳
+
+Redis와 WebSocket을 활용해 팀의 익명 대화, 점심 투표, 운영 모니터링을 하나의 흐름으로 연결한 실시간 참여 플랫폼입니다.
 
 단순 채팅/투표 기능보다, 익명 사용자가 빠르게 입력하는 환경에서 발생하는 운영 문제를 다루는 데 초점을 맞췄습니다. 메시지 수명 관리, 반복 요청 제한, 중복 투표 방지, 채팅방 정원 제어, 금칙어 정책, 관리자 대시보드, 보안 이벤트 로그를 하나의 서비스 흐름으로 구현했습니다.
-
-> 기존 프로젝트명: BubbleTalk
 
 ## 핵심 요약
 
@@ -68,7 +68,7 @@ Redis와 WebSocket을 활용한 실시간 익명 채팅·투표 운영 관리 �
 
 관련 코드:
 
-- `src/main/java/com/bubbletalk/chat/service/ChatService.java`
+- `src/main/java/com/lunchpulse/chat/service/ChatService.java`
 
 ### 2. 투표 랭킹은 Redis Sorted Set으로 처리
 
@@ -76,11 +76,11 @@ Redis와 WebSocket을 활용한 실시간 익명 채팅·투표 운영 관리 �
 
 관련 코드:
 
-- `src/main/java/com/bubbletalk/menu/service/MenuService.java`
+- `src/main/java/com/lunchpulse/menu/service/MenuService.java`
 
-### 3. 중복 투표는 Redis Set으로 방지
+### 3. 중복 투표와 점수 증가는 Lua Script로 원자 처리
 
-`SADD`의 반환값을 이용해 최초 투표인 경우에만 점수를 증가시켰습니다. 중복 확인과 점수 증가 사이에서 발생할 수 있는 중복 반영 문제를 줄이기 위한 구조입니다.
+`SADD`로 중복 여부를 기록하고 `ZINCRBY`로 점수를 올리는 두 명령을 Lua Script 하나로 묶었습니다. 오늘의 투표판에 없는 메뉴는 같은 Script 안에서 거절합니다. Redis 오류가 두 명령 사이에 발생해 “투표 기록만 남고 점수는 오르지 않는” 부분 실패를 방지합니다.
 
 ### 4. 채팅방 정원은 Redis Lua Script로 원자 처리
 
@@ -88,7 +88,7 @@ Redis와 WebSocket을 활용한 실시간 익명 채팅·투표 운영 관리 �
 
 관련 코드:
 
-- `src/main/java/com/bubbletalk/chatroom/service/ChatRoomService.java`
+- `src/main/java/com/lunchpulse/chatroom/service/ChatRoomService.java`
 
 ### 5. 익명 사용자 식별은 GuestID 우선
 
@@ -117,6 +117,10 @@ Redis와 WebSocket을 활용한 실시간 익명 채팅·투표 운영 관리 �
 | 서버 내부 오류 | 500 | `5000` |
 
 프론트 공통 AJAX 모듈은 실패 응답의 `code`, `status`, `message`, `result`를 보존해 화면에서 일관된 실패 메시지를 표시할 수 있습니다.
+
+### 8. 컨테이너는 재현 가능한 빌드와 최소 권한으로 실행
+
+Dockerfile은 Gradle 빌드 단계와 JRE 실행 단계를 분리한 multi-stage build를 사용합니다. 로컬에 미리 생성된 JAR가 없어도 같은 방식으로 빌드되며, 실행 컨테이너는 전용 non-root 사용자로 동작합니다. Docker Compose는 MySQL·Redis health check가 통과한 뒤 애플리케이션을 시작합니다.
 
 ## 아키텍처
 
@@ -188,7 +192,7 @@ Redis와 WebSocket을 활용한 실시간 익명 채팅·투표 운영 관리 �
 ## 패키지 구조
 
 ```text
-com.bubbletalk
+com.lunchpulse
 ├── admin.dashboard   # 관리자 대시보드
 ├── chat              # 실시간 채팅
 ├── chatroom          # 채팅방 생성/입장/퇴장/종료
@@ -205,7 +209,7 @@ com.bubbletalk
 | 문제 | 원인 | 해결 |
 | --- | --- | --- |
 | 실시간 랭킹 반영 지연 | REST 처리 후 화면 갱신 이벤트가 없음 | 투표 성공 후 WebSocket으로 최신 랭킹 브로드캐스팅 |
-| 중복 투표 가능성 | 중복 확인과 점수 증가가 분리됨 | Redis `SADD` 결과가 최초 추가일 때만 ZSet score 증가 |
+| 투표 부분 실패 가능성 | 중복 기록과 점수 증가가 별도 명령 | Lua Script로 `SADD`와 `ZINCRBY`를 원자 처리 |
 | 채팅 도배 | 익명 사용자가 짧은 시간에 반복 전송 | Redis `INCR`/`EXPIRE` 기반 Rate Limiting 적용 |
 | 채팅방 생성 도배 | 같은 사용자가 방을 반복 생성할 수 있음 | Redis `SETNX`/TTL 기반으로 30초에 1회만 생성 허용 |
 | 방 정원 초과 | 현재 인원 확인과 session 추가 사이 경쟁 조건 | Redis Lua Script로 `SCARD`와 `SADD` 원자 처리 |
@@ -225,8 +229,11 @@ com.bubbletalk
 ### 1. MySQL, Redis 실행
 
 ```bash
-docker-compose up -d
+cp .env.example .env
+docker compose up -d --build
 ```
+
+Windows PowerShell에서는 `Copy-Item .env.example .env`를 사용하세요. 실행 전에 `.env`의 비밀번호를 반드시 변경해야 합니다.
 
 ### 2. 애플리케이션 실행
 
@@ -249,16 +256,9 @@ macOS/Linux:
 | 메인 화면 | `http://localhost:8080` |
 | 관리자 로그인 | `http://localhost:8080/login` |
 | 관리자 대시보드 | `http://localhost:8080/admin/dashboard` |
-| Swagger UI | `http://localhost:8080/swagger-ui.html` |
+| Swagger UI | `http://localhost:8080/swagger-ui.html` (관리자 로그인 필요) |
 
-기본 관리자 계정은 로컬 개발용입니다.
-
-```text
-username: admin
-password: admin1234
-```
-
-운영 환경에서는 `ADMIN_USERNAME`, `ADMIN_PASSWORD` 환경변수로 반드시 변경해야 합니다.
+IDE에서 `dev` 프로필로 실행할 때만 기본 관리자 계정(`admin / admin1234`)을 사용할 수 있습니다. `prod` 프로필은 `ADMIN_USERNAME`, `ADMIN_PASSWORD`, DB 접속 환경변수가 없으면 기동하지 않도록 구성했습니다.
 
 ## 테스트
 
@@ -291,7 +291,6 @@ gradlew.bat test
 - Testcontainers 기반 MySQL/Redis 통합 테스트 추가
 - 운영 환경에서 `ddl-auto: update` 제거 및 Flyway/Liquibase 도입
 - 관리자 계정 정책 강화
-- Swagger 공개 범위 제한
 - Redis `KEYS` 사용 지점의 `SCAN` 전환
 - 부하 테스트를 통한 Rate Limit 임계값 검증
 

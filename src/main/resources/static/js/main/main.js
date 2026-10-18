@@ -25,11 +25,13 @@ const MAINJS = {
      */
     init: function() {
         console.log("MAINJS 초기화 시작...");
-        this.clientId = sessionStorage.getItem('bubbleTalkClientId');
+        this.clientId = sessionStorage.getItem('lunchPulseClientId')
+            || sessionStorage.getItem('bubbleTalkClientId');
         if (!this.clientId) {
             this.clientId = window.crypto?.randomUUID ? window.crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
-            sessionStorage.setItem('bubbleTalkClientId', this.clientId);
         }
+        sessionStorage.setItem('lunchPulseClientId', this.clientId);
+        sessionStorage.removeItem('bubbleTalkClientId');
         this.connectWebSocket();
         this.fetchInitialData();
         this.fetchExtraData(); // 타이머, 어제 우승자 등 추가 데이터
@@ -590,7 +592,15 @@ const MAINJS = {
         const sorted = [...this.battleItems].sort((a, b) => b.finalScore - a.finalScore);
 
         // [3] 순위 역전 감지 (1위 변경 시)
-        if (sorted.length > 0 && sorted[0].finalScore > 0) {
+        if (!sorted.length) {
+            const empty = document.createElement('div');
+            empty.className = 'room-empty-state';
+            empty.textContent = '아직 등록된 메뉴가 없습니다. 첫 후보를 추가해보세요.';
+            grid.appendChild(empty);
+            return;
+        }
+
+        if (sorted[0].finalScore > 0) {
             const currentTop = sorted[0];
             if (this.prevTopId && this.prevTopId !== currentTop.id) {
                 this.createBullet(`[${currentTop.menuName}] 1위로 올라왔어요`, 'SYSTEM', true);
@@ -598,29 +608,23 @@ const MAINJS = {
             this.prevTopId = currentTop.id;
         }
 
-        sorted.forEach((item, idx) => {
-            const pct = Math.round(((item.finalScore || 0) / totalVotes) * 100);
-            const card = document.createElement('div');
-            const isFirst = idx === 0 && item.finalScore > 0;
-            
-            card.className = `battle-card ${isFirst ? 'rank-1' : ''}`;
-            
-            card.onclick = () => {
-                // 클릭 피드백: 살짝 흔들림
-                card.style.transform = 'translateX(4px)';
-                setTimeout(() => card.style.transform = 'translateX(0)', 80);
-                this.vote(item.id, item.menuName);
-            };
+        sorted.forEach((item, index) => {
+            const percent = Math.round(((item.finalScore || 0) / totalVotes) * 100);
+            const card = document.createElement('button');
+            card.type = 'button';
+            card.className = `battle-card ${index === 0 && item.finalScore > 0 ? 'rank-1' : ''}`;
+            card.setAttribute('aria-label', `${item.menuName}에 투표하기, 현재 ${item.finalScore || 0}표`);
+            card.addEventListener('click', () => this.vote(item.id, item.menuName));
 
             card.innerHTML = `
-                <span class="menu-rank">#${String(idx + 1).padStart(2, '0')}</span>
+                <span class="menu-rank">#${String(index + 1).padStart(2, '0')}</span>
                 <h4 class="menu-title">${this.escapeHtml(item.menuName)}</h4>
                 <div class="menu-score">
                     <span>${item.finalScore || 0}표</span>
-                    <strong>${pct}%</strong>
+                    <strong>${percent}%</strong>
                 </div>
                 <div class="progress-container">
-                    <div class="progress-bar" style="width: ${pct}%"></div>
+                    <div class="progress-bar" style="width: ${percent}%"></div>
                 </div>
             `;
             grid.appendChild(card);
@@ -636,20 +640,21 @@ const MAINJS = {
         const rank2 = document.getElementById('rank-2-name');
         const rank3 = document.getElementById('rank-3-name');
 
-        if (rank1) rank1.innerText = sorted[0]?.menuName || '-';
-        if (rank2) rank2.innerText = sorted[1]?.menuName || '-';
-        if (rank3) rank3.innerText = sorted[2]?.menuName || '-';
+        if (rank1) rank1.textContent = sorted[0]?.menuName || '-';
+        if (rank2) rank2.textContent = sorted[1]?.menuName || '-';
+        if (rank3) rank3.textContent = sorted[2]?.menuName || '-';
 
         const list = document.getElementById('ranking-list');
         if (!list) return;
         list.innerHTML = '';
-        sorted.forEach((item, idx) => {
+        sorted.forEach((item, index) => {
             const row = document.createElement('div');
-            row.className = "ranking-row";
-            row.innerHTML = `
-                <span>#${idx + 1} ${this.escapeHtml(item.menuName)}</span>
-                <strong>${item.finalScore || 0}표</strong>
-            `;
+            row.className = 'ranking-row';
+            const name = document.createElement('span');
+            name.textContent = `#${index + 1} ${item.menuName}`;
+            const score = document.createElement('strong');
+            score.textContent = `${item.finalScore || 0}표`;
+            row.append(name, score);
             list.appendChild(row);
         });
     },
@@ -844,78 +849,6 @@ const MAINJS = {
         container.appendChild(el);
         el.addEventListener('animationend', () => el.remove());
     }
-};
-
-MAINJS.fetchExtraData = async function() {
-    try {
-        const response = await COMMON_AJAX.get('/api/menu/init-data');
-        if (response.code === '0000') {
-            const data = response.result;
-            this.endTime = `${data.endTime}:00`;
-            const winner = document.getElementById('yesterday-winner');
-            if (winner) winner.textContent = `${data.yesterdayWinner} (${data.yesterdayVotes}표)`;
-        }
-    } catch (error) {
-        console.error('추가 데이터 로딩 실패', error);
-    }
-};
-
-MAINJS.renderVoting = function() {
-    const grid = document.getElementById('voting-grid');
-    if (!grid) return;
-    grid.innerHTML = '';
-
-    const totalVotes = this.battleItems.reduce((sum, item) => sum + (item.finalScore || 0), 0) || 1;
-    const sorted = [...this.battleItems].sort((a, b) => b.finalScore - a.finalScore);
-
-    if (!sorted.length) {
-        grid.innerHTML = '<div class="room-empty-state">아직 등록된 메뉴가 없습니다.<br>첫 후보를 추가해보세요.</div>';
-        return;
-    }
-
-    if (sorted[0].finalScore > 0) {
-        const currentTop = sorted[0];
-        if (this.prevTopId && this.prevTopId !== currentTop.id) {
-            this.createBullet(`[${currentTop.menuName}] 1위로 올라왔어요`, 'SYSTEM', true);
-        }
-        this.prevTopId = currentTop.id;
-    }
-
-    sorted.forEach((item, index) => {
-        const percent = Math.round(((item.finalScore || 0) / totalVotes) * 100);
-        const card = document.createElement('button');
-        card.type = 'button';
-        card.className = `battle-card ${index === 0 && item.finalScore > 0 ? 'rank-1' : ''}`;
-        card.addEventListener('click', () => this.vote(item.id, item.menuName));
-        card.innerHTML = `
-            <span class="menu-rank">#${String(index + 1).padStart(2, '0')}</span>
-            <h4 class="menu-title">${this.escapeHtml(item.menuName)}</h4>
-            <div class="menu-score"><span>${item.finalScore || 0}표</span><strong>${percent}%</strong></div>
-            <div class="progress-container"><div class="progress-bar" style="width:${percent}%"></div></div>
-        `;
-        grid.appendChild(card);
-    });
-};
-
-MAINJS.renderResults = function() {
-    const sorted = [...this.battleItems].sort((a, b) => b.finalScore - a.finalScore);
-    document.getElementById('rank-1-name').textContent = sorted[0]?.menuName || '-';
-    document.getElementById('rank-2-name').textContent = sorted[1]?.menuName || '-';
-    document.getElementById('rank-3-name').textContent = sorted[2]?.menuName || '-';
-
-    const list = document.getElementById('ranking-list');
-    if (!list) return;
-    list.innerHTML = '';
-    sorted.forEach((item, index) => {
-        const row = document.createElement('div');
-        row.className = 'ranking-row';
-        const name = document.createElement('span');
-        name.textContent = `#${index + 1} ${item.menuName}`;
-        const score = document.createElement('strong');
-        score.textContent = `${item.finalScore || 0}표`;
-        row.append(name, score);
-        list.appendChild(row);
-    });
 };
 
 document.addEventListener('DOMContentLoaded', () => {

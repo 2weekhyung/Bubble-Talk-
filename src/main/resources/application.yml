@@ -2,30 +2,25 @@
 spring:
   profiles:
     active: dev
-  jpa:
-    show-sql: true
-    properties:
-      hibernate:
-        format_sql: true
-
-logging:
-  level:
-    org.hibernate.SQL: debug
-    org.hibernate.type.descriptor.sql.BasicBinder: trace
 
 admin:
   username: ${ADMIN_USERNAME:admin}
   password: ${ADMIN_PASSWORD:admin1234}
 
-bubble-talk:
+lunch-pulse:
   guest:
-    cookie-secure: ${BT_GUEST_COOKIE_SECURE:false}
+    cookie-secure: ${LP_GUEST_COOKIE_SECURE:false}
 
 ---
 spring:
   config:
     activate:
       on-profile: dev
+  jpa:
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
   datasource:
     url: jdbc:mysql://localhost:3306/bubble_talk?useSSL=false&allowPublicKeyRetrieval=true&characterEncoding=UTF-8&serverTimezone=Asia/Seoul
     username: root
@@ -36,20 +31,34 @@ spring:
       host: localhost
       port: 6379
 
+logging:
+  level:
+    org.hibernate.SQL: debug
+
 ---
 spring:
   config:
     activate:
       on-profile: prod
   datasource:
-    url: jdbc:mysql://db:3306/bubbletalk?useSSL=false&allowPublicKeyRetrieval=true&characterEncoding=UTF-8&serverTimezone=Asia/Seoul
-    username: root
-    password: root
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
   jpa:
     hibernate:
       ddl-auto: update
   data:
     redis:
-      host: redis
-      port: 6379
+      host: ${SPRING_DATA_REDIS_HOST:redis}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+
+# 운영 프로필은 기본 관리자 비밀번호로 기동하지 않습니다.
+# 배포 환경 또는 docker-compose의 .env에서 반드시 값을 주입해야 합니다.
+admin:
+  username: ${ADMIN_USERNAME}
+  password: ${ADMIN_PASSWORD}
+
+logging:
+  level:
+    org.hibernate.SQL: info

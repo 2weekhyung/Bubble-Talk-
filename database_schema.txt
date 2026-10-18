@@ -1,4 +1,4 @@
-[버블톡(BubbleTalk) 최신화된 DB 스크립트 - 2026-05-03]
+[LunchPulse 최신화 DB 스크립트 - 2026-05-03]
 작성일: 2026-05-03
 대상 DB: MySQL / MariaDB
 
